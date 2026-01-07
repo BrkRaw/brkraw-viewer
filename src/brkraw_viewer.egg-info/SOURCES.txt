@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+src/brkraw_viewer/__init__.py
+src/brkraw_viewer/app.py
+src/brkraw_viewer/orientation.py
+src/brkraw_viewer/plugin.py
+src/brkraw_viewer.egg-info/PKG-INFO
+src/brkraw_viewer.egg-info/SOURCES.txt
+src/brkraw_viewer.egg-info/dependency_links.txt
+src/brkraw_viewer.egg-info/entry_points.txt
+src/brkraw_viewer.egg-info/requires.txt
+src/brkraw_viewer.egg-info/top_level.txt

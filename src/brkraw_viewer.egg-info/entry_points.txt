@@ -1,0 +1,2 @@
+[brkraw.cli]
+viewer = brkraw_viewer.plugin:register
