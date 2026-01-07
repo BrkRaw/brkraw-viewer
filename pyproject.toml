@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "brkraw>=0.5.0b1",
-  "matplotlib>=3.7",
+  "pillow>=10.0",
 ]
 authors = [{name = "BrkRaw"}]
 license = {text = "MIT"}
