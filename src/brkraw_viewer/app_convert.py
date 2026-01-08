@@ -436,7 +436,9 @@ class ConvertTabMixin:
         except Exception:
             info = {}
 
-        keys = sorted(set(self._flatten_keys(info)) | {"scan_id", "reco_id"})
+        # BrkRaw built-in layout keys should always be available in the picker.
+        # Keep this list focused on scalar-friendly tags (for filenames).
+        keys = sorted(set(self._flatten_keys(info)) | {"scan_id", "reco_id", "Counter"})
         previous_state: Optional[str] = None
         try:
             previous_state = str(self._layout_key_listbox.cget("state"))
@@ -470,16 +472,9 @@ class ConvertTabMixin:
             for k, v in obj.items():
                 key = str(k)
                 path = f"{prefix}.{key}" if prefix else key
-                if isinstance(v, list):
-                    yield from self._flatten_keys(v, path)
-                else:
-                    yield path
-                    yield from self._flatten_keys(v, path)
-        elif isinstance(obj, list):
-            for idx, v in enumerate(obj):
-                path = f"{prefix}[{idx}]" if prefix else f"[{idx}]"
+                if isinstance(v, (Mapping, list, tuple)):
+                    continue
                 yield path
-                yield from self._flatten_keys(v, path)
 
     def _on_layout_key_double_click(self, *_: object) -> None:
         if self._layout_key_listbox is None:
