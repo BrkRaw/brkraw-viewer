@@ -38,6 +38,8 @@ class ConvertTabMixin:
     _layout_key_listbox: Optional[tk.Listbox]
     _layout_key_source_signature: Optional[tuple[Any, ...]]
     _layout_keys_title: tk.StringVar
+    _layout_key_add_button: Optional[ttk.Button]
+    _layout_key_remove_button: Optional[ttk.Button]
 
     _convert_space_var: tk.StringVar
     _convert_use_viewer_pose_var: tk.BooleanVar
@@ -126,7 +128,7 @@ class ConvertTabMixin:
         keys_frame.grid(row=0, column=3, rowspan=7, sticky="nsew", padx=(10, 0))
         keys_frame.columnconfigure(0, weight=1)
         keys_frame.rowconfigure(1, weight=1)
-        self._layout_keys_title = tk.StringVar(value="Key (click to add)")
+        self._layout_keys_title = tk.StringVar(value="Key (select then +)")
         ttk.Label(keys_frame, textvariable=self._layout_keys_title).grid(row=0, column=0, sticky="w")
         self._layout_key_listbox = tk.Listbox(keys_frame, width=28, height=10, exportselection=False)
         self._layout_key_listbox.grid(row=1, column=0, sticky="nsew")
@@ -136,6 +138,17 @@ class ConvertTabMixin:
         self._layout_key_listbox.bind("<Button-1>", self._on_layout_key_mouse_down)
         self._layout_key_listbox.bind("<ButtonRelease-1>", self._on_layout_key_click)
         self._layout_key_listbox.bind("<Double-Button-1>", self._on_layout_key_double_click)
+
+        self._layout_key_add_button = None
+        self._layout_key_remove_button = None
+        key_buttons = ttk.Frame(keys_frame)
+        key_buttons.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        key_buttons.columnconfigure(0, weight=1)
+        key_buttons.columnconfigure(1, weight=1)
+        self._layout_key_add_button = ttk.Button(key_buttons, text="+", command=self._add_selected_layout_key)
+        self._layout_key_add_button.grid(row=0, column=0, sticky="ew")
+        self._layout_key_remove_button = ttk.Button(key_buttons, text="-", command=self._remove_selected_layout_key)
+        self._layout_key_remove_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
         convert_frame = ttk.LabelFrame(layout_tab, text="Convert", padding=(8, 8))
         convert_frame.grid(row=1, column=0, sticky="nsew")
@@ -270,6 +283,14 @@ class ConvertTabMixin:
             self._layout_template_entry.configure(state="disabled" if use_entries else "normal")
         except Exception:
             pass
+        button_state = "disabled" if use_entries else "normal"
+        for btn in (getattr(self, "_layout_key_add_button", None), getattr(self, "_layout_key_remove_button", None)):
+            if btn is None:
+                continue
+            try:
+                btn.configure(state=button_state)
+            except Exception:
+                pass
         if use_entries and self._layout_key_listbox is not None:
             self._layout_key_listbox.selection_clear(0, tk.END)
         self._refresh_layout_keys()
@@ -476,13 +497,19 @@ class ConvertTabMixin:
                     continue
                 yield path
 
-    def _on_layout_key_double_click(self, *_: object) -> None:
+    def _selected_layout_key(self) -> Optional[str]:
         if self._layout_key_listbox is None:
-            return
+            return None
         selection = self._layout_key_listbox.curselection()
         if not selection:
-            return
+            return None
         key = str(self._layout_key_listbox.get(int(selection[0])))
+        if not key:
+            return None
+        return key
+
+    def _add_selected_layout_key(self) -> None:
+        key = self._selected_layout_key()
         if not key:
             return
         if bool(self._use_layout_entries_var.get()):
@@ -491,8 +518,27 @@ class ConvertTabMixin:
         current = self._layout_template_var.get() or ""
         self._layout_template_var.set(f"{current}{{{key}}}")
 
+    def _remove_selected_layout_key(self) -> None:
+        key = self._selected_layout_key()
+        if not key:
+            return
+        if bool(self._use_layout_entries_var.get()):
+            self._status_var.set("Template is disabled (using layout_entries).")
+            return
+        token = f"{{{key}}}"
+        current = self._layout_template_var.get() or ""
+        idx = current.rfind(token)
+        if idx < 0:
+            return
+        self._layout_template_var.set(current[:idx] + current[idx + len(token) :])
+
+    def _on_layout_key_double_click(self, *_: object) -> None:
+        # Selection only. Use +/- buttons to edit the template.
+        return
+
     def _on_layout_key_click(self, *_: object) -> None:
-        self._on_layout_key_double_click()
+        # Selection only. Use +/- buttons to edit the template.
+        return
 
     def _on_layout_key_mouse_down(self, *_: object) -> Optional[str]:
         if bool(self._use_layout_entries_var.get()):
