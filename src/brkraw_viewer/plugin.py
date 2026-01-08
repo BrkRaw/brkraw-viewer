@@ -22,13 +22,6 @@ def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[na
         default=None,
         help="Optional scan info spec YAML path (overrides default scan info mapping).",
     )
-    parser.add_argument(
-        "--axis",
-        default="axial",
-        choices=("axial", "coronal", "sagittal"),
-        help="Initial viewing axis.",
-    )
-    parser.add_argument("--slice", type=int, default=None, help="Initial slice index.")
     parser.set_defaults(func=_run_viewer)
 
 
@@ -38,6 +31,4 @@ def _run_viewer(args: argparse.Namespace) -> int:
         scan_id=args.scan,
         reco_id=args.reco,
         info_spec=args.info_spec,
-        axis=args.axis,
-        slice_index=args.slice,
     )

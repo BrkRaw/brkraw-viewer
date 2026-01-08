@@ -103,9 +103,7 @@ Optional arguments allow opening a specific scan or slice:
 
     brkraw viewer /path/to/bruker/study \
         --scan 3 \
-        --reco 1 \
-        --axis axial \
-        --slice 20
+        --reco 1
 
 The viewer can also open `.zip` or Paravision-exported `.PvDatasets`
 archives using `Load` (folder or archive file).

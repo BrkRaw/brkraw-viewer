@@ -39,8 +39,6 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         scan_id: Optional[int],
         reco_id: Optional[int],
         info_spec: Optional[str],
-        axis: str,
-        slice_index: Optional[int],
     ) -> None:
         super().__init__()
         self.title("BrkRaw Viewer")
@@ -59,8 +57,6 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._data: Optional[np.ndarray] = None
         self._affine: Optional[np.ndarray] = None
         self._res: Optional[np.ndarray] = None
-        self._slice_hint: Optional[int] = slice_index
-        self._slice_hint_axis = axis
         self._frame_index = 0
         self._current_reco_id: Optional[int] = None
         self._slicepack_data: Optional[Tuple[np.ndarray, ...]] = None
@@ -1837,20 +1833,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._y_scale.configure(from_=0, to=max_y, state=tk.NORMAL)
         self._z_scale.configure(from_=0, to=max_z, state=tk.NORMAL)
 
-        if self._slice_hint is not None:
-            hint = max(self._slice_hint, 0)
-            axis = (self._slice_hint_axis or "").lower()
-            if axis == "sagittal":
-                self._x_var.set(min(hint, max_x))
-            elif axis == "coronal":
-                self._y_var.set(min(hint, max_y))
-            else:
-                self._z_var.set(min(hint, max_z))
-            self._slice_hint = None
-        else:
-            self._x_var.set(max_x // 2)
-            self._y_var.set(max_y // 2)
-            self._z_var.set(max_z // 2)
+        self._x_var.set(max_x // 2)
+        self._y_var.set(max_y // 2)
+        self._z_var.set(max_z // 2)
 
     def _update_frame_range(self) -> None:
         if self._data is None or self._data.ndim < 4:
@@ -2052,16 +2037,12 @@ def launch(
     scan_id: Optional[int],
     reco_id: Optional[int],
     info_spec: Optional[str],
-    axis: str,
-    slice_index: Optional[int],
 ) -> int:
     app = ViewerApp(
         path=path,
         scan_id=scan_id,
         reco_id=reco_id,
         info_spec=info_spec,
-        axis=axis,
-        slice_index=slice_index,
     )
     app.mainloop()
     return 0
