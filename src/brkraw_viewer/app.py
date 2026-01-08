@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pprint
 import importlib
+import yaml
 
 from brkraw.apps.loader import BrukerLoader
 from brkraw.apps.loader.types import StudyLoader
@@ -135,9 +136,81 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._apply_window_presentation()
 
         if path:
-            self._load_path(path, scan_id=scan_id, reco_id=reco_id)
+            self._start_spinner("Opening")
+            self.after(250, lambda: self._load_path_with_spinner(path, scan_id=scan_id, reco_id=reco_id))
         else:
             self._status_var.set("Open a study folder, zip, or PvDatasets package to begin.")
+
+    def _load_path_with_spinner(
+        self,
+        path: str,
+        *,
+        scan_id: Optional[int],
+        reco_id: Optional[int],
+    ) -> None:
+        try:
+            self._load_path(path, scan_id=scan_id, reco_id=reco_id)
+        finally:
+            self._stop_spinner()
+
+    def _start_spinner(self, label: str) -> None:
+        self._spinner_label = label
+        self._spinner_index = 0
+        self._spinner_after_id = None
+        self._spin_once()
+
+    def _stop_spinner(self) -> None:
+        after_id = getattr(self, "_spinner_after_id", None)
+        if isinstance(after_id, str):
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        self._spinner_after_id = None
+
+    def _spin_once(self) -> None:
+        frames = "|/-\\"
+        idx = int(getattr(self, "_spinner_index", 0))
+        self._spinner_index = idx + 1
+        label = getattr(self, "_spinner_label", "Opening")
+        self._status_var.set(f"{label} {frames[idx % len(frames)]}")
+        self._spinner_after_id = self.after(120, self._spin_once)
+
+    @staticmethod
+    def _to_yaml_safe(obj: Any) -> Any:
+        if obj is None:
+            return None
+        if isinstance(obj, (str, int, float, bool)):
+            return obj
+        if isinstance(obj, Path):
+            return str(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.generic):
+            try:
+                return obj.item()
+            except Exception:
+                return str(obj)
+        if isinstance(obj, dict):
+            return {str(k): ViewerApp._to_yaml_safe(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [ViewerApp._to_yaml_safe(v) for v in obj]
+        try:
+            return str(obj)
+        except Exception:
+            return repr(obj)
+
+    def _format_yaml(self, payload: Any) -> str:
+        safe_payload = self._to_yaml_safe(payload)
+        try:
+            return yaml.safe_dump(
+                safe_payload,
+                sort_keys=False,
+                allow_unicode=True,
+                default_flow_style=False,
+            )
+        except Exception:
+            return pprint.pformat(payload, sort_dicts=False, width=120)
 
     def _apply_window_presentation(self) -> None:
         self._set_app_icon()
@@ -1028,7 +1101,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._set_info_output("No spec selected.")
             return
         data = self._apply_spec_to_scan(kind=kind, spec_path=path, reco_id=self._current_reco_id)
-        self._set_info_output(pprint.pformat(data, sort_dicts=False, width=120))
+        self._set_info_output(data)
 
     def _browse_spec_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -1057,7 +1130,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             if not isinstance(data, dict):
                 continue
             if data:
-                self._set_info_output(pprint.pformat(data, sort_dicts=False, width=120))
+                self._set_info_output(data)
                 return
         self._set_info_output("Failed to apply spec file (unsupported or produced empty output).")
 
@@ -1316,9 +1389,13 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             "matches": [{"file": src, "path": path, "value": value} for src, path, value in matches[:500]],
             "truncated": max(len(matches) - 500, 0),
         }
-        self._set_info_output(pprint.pformat(payload, sort_dicts=False, width=120))
+        self._set_info_output(payload)
 
-    def _set_info_output(self, text: str) -> None:
+    def _set_info_output(self, payload: Any) -> None:
+        if isinstance(payload, str):
+            text = payload
+        else:
+            text = self._format_yaml(payload)
         self._info_output_text.configure(state=tk.NORMAL)
         self._info_output_text.delete("1.0", tk.END)
         self._info_output_text.insert(tk.END, text)

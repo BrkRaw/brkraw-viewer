@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import datetime as dt
+import shutil
 import tkinter as tk
 from tkinter import messagebox, ttk
+from pathlib import Path
 
 from brkraw.core import config as config_core
 
@@ -16,6 +19,7 @@ class ConfigTabMixin:
         config_bar = ttk.Frame(config_tab, padding=(6, 6))
         config_bar.grid(row=0, column=0, sticky="ew")
         ttk.Button(config_bar, text="Save", command=self._save_config_text).pack(side=tk.LEFT)
+        ttk.Button(config_bar, text="Backup", command=self._backup_config_text).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(config_bar, text="Reset", command=self._reset_config_text).pack(side=tk.LEFT, padx=(6, 0))
         self._config_path_var = tk.StringVar(value="")
         ttk.Label(config_bar, textvariable=self._config_path_var).pack(side=tk.LEFT, padx=(12, 0))
@@ -51,6 +55,21 @@ class ConfigTabMixin:
             paths.config_file.write_text(text, encoding="utf-8")
         except Exception as exc:
             messagebox.showerror("Save error", f"Failed to save config.yaml:\n{exc}")
+
+    def _backup_config_text(self) -> None:
+        try:
+            paths = config_core.ensure_initialized(root=None, create_config=True, exist_ok=True)
+            config_path = paths.config_file
+            self._config_path_var.set(str(config_path))
+            if not config_path.exists():
+                messagebox.showwarning("Backup", f"Config file not found:\n{config_path}")
+                return
+            ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+            backup_path = Path(f"{config_path}.bak-{ts}")
+            shutil.copy2(config_path, backup_path)
+            messagebox.showinfo("Backup", f"Created backup:\n{backup_path}")
+        except Exception as exc:
+            messagebox.showerror("Backup error", f"Failed to back up config.yaml:\n{exc}")
 
     def _reset_config_text(self) -> None:
         try:

@@ -470,8 +470,11 @@ class ConvertTabMixin:
             for k, v in obj.items():
                 key = str(k)
                 path = f"{prefix}.{key}" if prefix else key
-                yield path
-                yield from self._flatten_keys(v, path)
+                if isinstance(v, list):
+                    yield from self._flatten_keys(v, path)
+                else:
+                    yield path
+                    yield from self._flatten_keys(v, path)
         elif isinstance(obj, list):
             for idx, v in enumerate(obj):
                 path = f"{prefix}[{idx}]" if prefix else f"[{idx}]"
