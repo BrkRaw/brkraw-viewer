@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import shutil
 import tkinter as tk
 from tkinter import messagebox, ttk
 from pathlib import Path
 
 from brkraw.core import config as config_core
+
+logger = logging.getLogger("brkraw.viewer")
 
 
 class ConfigTabMixin:
@@ -40,6 +43,7 @@ class ConfigTabMixin:
             self._config_path_var.set(str(paths.config_file))
             content = paths.config_file.read_text(encoding="utf-8")
         except Exception as exc:
+            logger.error("Failed to load config.yaml: %s", exc, exc_info=logger.isEnabledFor(logging.DEBUG))
             self._config_path_var.set("")
             self._config_text.delete("1.0", tk.END)
             self._config_text.insert(tk.END, f"# Failed to load config.yaml: {exc}\n")
@@ -53,7 +57,9 @@ class ConfigTabMixin:
             self._config_path_var.set(str(paths.config_file))
             text = self._config_text.get("1.0", tk.END)
             paths.config_file.write_text(text, encoding="utf-8")
+            logger.info("Saved config.yaml: %s", paths.config_file)
         except Exception as exc:
+            logger.error("Failed to save config.yaml: %s", exc, exc_info=logger.isEnabledFor(logging.DEBUG))
             messagebox.showerror("Save error", f"Failed to save config.yaml:\n{exc}")
 
     def _backup_config_text(self) -> None:
@@ -67,14 +73,18 @@ class ConfigTabMixin:
             ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
             backup_path = Path(f"{config_path}.bak-{ts}")
             shutil.copy2(config_path, backup_path)
+            logger.info("Backed up config.yaml: %s", backup_path)
             messagebox.showinfo("Backup", f"Created backup:\n{backup_path}")
         except Exception as exc:
+            logger.error("Failed to back up config.yaml: %s", exc, exc_info=logger.isEnabledFor(logging.DEBUG))
             messagebox.showerror("Backup error", f"Failed to back up config.yaml:\n{exc}")
 
     def _reset_config_text(self) -> None:
         try:
             config_core.reset_config(root=None)
+            logger.info("Reset config.yaml to defaults.")
         except Exception as exc:
+            logger.error("Failed to reset config.yaml: %s", exc, exc_info=logger.isEnabledFor(logging.DEBUG))
             messagebox.showerror("Reset error", f"Failed to reset config.yaml:\n{exc}")
             return
         self._load_config_text()

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, cast
 import datetime as dt
 from pathlib import Path
+import sys
+import threading
+import time
 
 import numpy as np
 import pprint
@@ -30,6 +34,8 @@ ScanLike = Any
 
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 760
+
+logger = logging.getLogger("brkraw.viewer")
 
 
 class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
@@ -136,7 +142,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._apply_window_presentation()
 
         if path:
-            self._start_spinner("Opening")
+            self._status_var.set("Opening…")
             self.after(250, lambda: self._load_path_with_spinner(path, scan_id=scan_id, reco_id=reco_id))
         else:
             self._status_var.set("Open a study folder, zip, or PvDatasets package to begin.")
@@ -148,33 +154,46 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         scan_id: Optional[int],
         reco_id: Optional[int],
     ) -> None:
+        stop_event = threading.Event()
+        spinner_thread = None
+        if sys.stdout and getattr(sys.stdout, "isatty", lambda: False)():
+            spinner_thread = threading.Thread(
+                target=self._console_spinner,
+                args=(stop_event, "Opening",),
+                daemon=True,
+            )
+            spinner_thread.start()
         try:
+            logger.info("Opening dataset: %s", path)
             self._load_path(path, scan_id=scan_id, reco_id=reco_id)
+            logger.info("Open complete.")
         finally:
-            self._stop_spinner()
+            stop_event.set()
+            if spinner_thread is not None:
+                spinner_thread.join(timeout=0.5)
+            if sys.stdout and getattr(sys.stdout, "isatty", lambda: False)():
+                try:
+                    sys.stdout.write("\r" + (" " * 40) + "\r")
+                    sys.stdout.flush()
+                except Exception:
+                    pass
 
-    def _start_spinner(self, label: str) -> None:
-        self._spinner_label = label
-        self._spinner_index = 0
-        self._spinner_after_id = None
-        self._spin_once()
-
-    def _stop_spinner(self) -> None:
-        after_id = getattr(self, "_spinner_after_id", None)
-        if isinstance(after_id, str):
-            try:
-                self.after_cancel(after_id)
-            except Exception:
-                pass
-        self._spinner_after_id = None
-
-    def _spin_once(self) -> None:
+    @staticmethod
+    def _console_spinner(stop_event: threading.Event, label: str) -> None:
         frames = "|/-\\"
-        idx = int(getattr(self, "_spinner_index", 0))
-        self._spinner_index = idx + 1
-        label = getattr(self, "_spinner_label", "Opening")
-        self._status_var.set(f"{label} {frames[idx % len(frames)]}")
-        self._spinner_after_id = self.after(120, self._spin_once)
+        idx = 0
+        last_emit = 0.0
+        while not stop_event.is_set():
+            now = time.time()
+            if now - last_emit >= 0.12:
+                last_emit = now
+                try:
+                    sys.stdout.write(f"\r{label} {frames[idx % len(frames)]}")
+                    sys.stdout.flush()
+                except Exception:
+                    return
+                idx += 1
+            time.sleep(0.02)
 
     @staticmethod
     def _to_yaml_safe(obj: Any) -> Any:
@@ -214,8 +233,19 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
     def _apply_window_presentation(self) -> None:
         self._set_app_icon()
+        self._set_app_name()
         self.after(0, self._bring_to_front)
         self.after(250, self._bring_to_front)
+
+    def _set_app_name(self) -> None:
+        try:
+            self.tk.call("tk", "appname", "BrkRaw")
+        except Exception:
+            pass
+        try:
+            self.tk.call("tk::mac::SetApplicationName", "BrkRaw")
+        except Exception:
+            pass
 
     def _bring_to_front(self) -> None:
         try:
@@ -702,6 +732,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 self._study = cast(StudyLoader, self._loader._study)
                 break
             except Exception as exc:
+                logger.debug("Failed loader candidate %s: %s", candidate, exc, exc_info=True)
                 last_exc = exc
         else:
             details = "\n".join(candidate_paths) if candidate_paths else path
@@ -710,6 +741,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 f"Failed to load dataset:\n{last_exc}\n\nTried:\n{details}",
             )
             self._status_var.set("Failed to load dataset.")
+            logger.error("Failed to load dataset: %s", last_exc)
             return
 
         self._scan_info_cache.clear()
@@ -717,7 +749,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._scan_ids = list(self._study.avail.keys()) if self._study else []
         if not self._scan_ids:
             self._status_var.set("No scans found.")
+            logger.warning("No scans found in dataset.")
             return
+        logger.info("Loaded dataset with %d scan(s).", len(self._scan_ids))
 
         self._update_subject_info()
         self._populate_scan_list()
@@ -2115,6 +2149,12 @@ def launch(
     reco_id: Optional[int],
     info_spec: Optional[str],
 ) -> int:
+    config_core.configure_logging()
+    if path:
+        try:
+            print(f"Opening {path} ...", flush=True)
+        except Exception:
+            pass
     app = ViewerApp(
         path=path,
         scan_id=scan_id,
