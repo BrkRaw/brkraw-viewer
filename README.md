@@ -108,7 +108,7 @@ Optional arguments allow opening a specific scan or slice:
         --slice 20
 
 The viewer can also open `.zip` or Paravision-exported `.PvDatasets`
-archives using the "Open File" button.
+archives using `Load` (folder or archive file).
 
 ---
 
@@ -124,14 +124,13 @@ archives using the "Open File" button.
 
 ## Update
 
-The viewer now includes a modernized, tkinter-first experience while
-keeping the original philosophy and contribution model intact:
+Recent updates:
 
-- Orthogonal scanner-space preview with manual subject type/pose overrides
-- Rule-aware info parsing with override spec selection
-- Layout/convert panel with output control and slicepack suffixes
-- Timecourse plotting with point picking (no matplotlib)
-- Parameter browser with search for method/acqp/visu_pars
+- Open folders or archives (`.zip` / `.PvDatasets`)
+- Viewer: `Space` (`raw/scanner/subject_ras`), nibabel RAS display, click-to-set `X/Y/Z`, optional crosshair + zoom, slicepack/frame sliders only when needed
+- Info: rule + spec selection (installed or file override), parameter search, lazy Viewer refresh on tab focus
+- Convert: BrkRaw layout engine, template + suffix defaults from `~/.brkraw/config.yaml`, keys browser (click to add), optional config `layout_entries`
+- Config: edit `~/.brkraw/config.yaml` in-app; basic focus/icon UX
 
 This update keeps dependencies minimal and preserves compatibility with
 the core BrkRaw rule/spec/hook system.

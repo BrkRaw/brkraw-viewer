@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "releaseVersion",
+      "type": "promptString",
+      "description": "Release version (e.g., 0.1.0)"
+    }
+  ],
+  "tasks": [
+    {
+      "label": "Dev: Install (editable)",
+      "type": "shell",
+      "command": "\"${command:python.interpreterPath}\" -m pip install -e .",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Dev: Compile (py_compile)",
+      "type": "shell",
+      "command": "PYTHONPYCACHEPREFIX=${workspaceFolder}/.pycache \"${command:python.interpreterPath}\" -m compileall -q src/brkraw_viewer",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Release: Prep (bump + notes)",
+      "type": "shell",
+      "command": "\"${command:python.interpreterPath}\" scripts/release_prep.py --version ${input:releaseVersion} --fetch-tags --remote origin",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Release: Tag + Push (origin)",
+      "type": "shell",
+      "command": "\"${command:python.interpreterPath}\" scripts/tag_and_push.py --remote origin",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: sdist + wheel",
+      "type": "shell",
+      "command": "\"${command:python.interpreterPath}\" -m pip install -U build && \"${command:python.interpreterPath}\" -m build",
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}
