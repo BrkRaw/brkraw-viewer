@@ -526,7 +526,10 @@ class ConvertTabMixin:
             return len(dataobj)
         return 1 if dataobj is not None else 0
 
-    def _planned_output_paths(self) -> list[Path]:
+    _COUNTER_SENTINEL = 987654321
+    _COUNTER_PLACEHOLDER = "<N>"
+
+    def _planned_output_paths(self, *, preview: bool, count: Optional[int] = None) -> list[Path]:
         if self._scan is None or self._current_reco_id is None:
             return []
         scan_id = getattr(self._scan, "scan_id", None)
@@ -536,9 +539,11 @@ class ConvertTabMixin:
         output_dir = self._output_dir_var.get().strip() or "output"
         output_path = Path(output_dir)
 
-        count = self._estimate_slicepack_count()
-        if count <= 0:
+        if count is None:
+            count = self._estimate_slicepack_count()
+        if int(count) <= 0:
             return []
+        count = int(count)
 
         root = resolve_root(None)
         layout_entries = config_core.layout_entries(root=root)
@@ -558,17 +563,6 @@ class ConvertTabMixin:
         metadata_spec_path = self._layout_override_metadata_spec_path()
 
         try:
-            base_name = layout_core.render_layout(
-                self._loader,
-                scan_id,
-                layout_entries=layout_entries,
-                layout_template=layout_template,
-                context_map=None,
-                root=root,
-                reco_id=self._current_reco_id,
-                override_info_spec=info_spec_path,
-                override_metadata_spec=metadata_spec_path,
-            )
             info = layout_core.load_layout_info(
                 self._loader,
                 scan_id,
@@ -579,25 +573,104 @@ class ConvertTabMixin:
                 override_metadata_spec=metadata_spec_path,
             )
         except Exception:
-            base_name = f"scan-{scan_id}"
             info = {}
 
-        suffixes = (
-            layout_core.render_slicepack_suffixes(info, count=count, template=slicepack_suffix) if count > 1 else [""]
+        counter_enabled = self._uses_counter_tag(
+            layout_template=layout_template,
+            layout_entries=layout_entries,
         )
+        counter_preview: Optional[int] = self._COUNTER_SENTINEL if (preview and counter_enabled) else None
 
-        paths: list[Path] = []
-        for idx in range(count):
-            suffix = suffixes[idx] if idx < len(suffixes) else f"_slpack{idx + 1}"
-            filename = f"{base_name}{suffix}.nii.gz"
-            paths.append(output_path / filename)
-        return paths
+        reserved: set[Path] = set()
+        base_name_base: Optional[str] = None
+        for attempt in range(1, 1000):
+            counter = attempt if (counter_enabled and not preview) else counter_preview
+            try:
+                base_name = layout_core.render_layout(
+                    self._loader,
+                    scan_id,
+                    layout_entries=layout_entries,
+                    layout_template=layout_template,
+                    context_map=None,
+                    root=root,
+                    reco_id=self._current_reco_id,
+                    counter=counter,
+                    override_info_spec=info_spec_path,
+                    override_metadata_spec=metadata_spec_path,
+                )
+            except Exception:
+                base_name = f"scan-{scan_id}"
+            base_name = str(base_name)
+
+            if base_name_base is None:
+                base_name_base = base_name
+
+            if not counter_enabled and attempt > 1:
+                base_name = f"{base_name_base}_{attempt}"
+
+            if count > 1:
+                try:
+                    suffixes = layout_core.render_slicepack_suffixes(
+                        info,
+                        count=count,
+                        template=slicepack_suffix,
+                        counter=counter,
+                    )
+                except Exception:
+                    suffixes = [f"_slpack{i + 1}" for i in range(count)]
+            else:
+                suffixes = [""]
+
+            if preview and counter_enabled:
+                base_name = base_name.replace(str(self._COUNTER_SENTINEL), self._COUNTER_PLACEHOLDER)
+                suffixes = [
+                    suffix.replace(str(self._COUNTER_SENTINEL), self._COUNTER_PLACEHOLDER) for suffix in suffixes
+                ]
+
+            paths: list[Path] = []
+            for idx in range(count):
+                suffix = suffixes[idx] if idx < len(suffixes) else f"_slpack{idx + 1}"
+                filename = f"{base_name}{suffix}.nii.gz"
+                paths.append(output_path / filename)
+
+            if preview:
+                return paths
+            if self._paths_collide(paths, reserved):
+                continue
+            return paths
+        return []
 
     def _render_template_with_context(self, template: str, *, reco_id: Optional[int]) -> str:
         value = "" if reco_id is None else str(int(reco_id))
         for key in ("reco_id", "recoid", "RecoID"):
             template = template.replace(f"{{{key}}}", value)
         return template
+
+    def _uses_counter_tag(self, *, layout_template: Optional[str], layout_entries: Optional[list]) -> bool:
+        if isinstance(layout_template, str) and ("{Counter}" in layout_template or "{counter}" in layout_template):
+            return True
+        for entry in layout_entries or []:
+            if not isinstance(entry, Mapping):
+                continue
+            key = entry.get("key")
+            if isinstance(key, str) and key.strip() in {"Counter", "counter"}:
+                return True
+        return False
+
+    @staticmethod
+    def _paths_collide(paths: list[Path], reserved: set[Path]) -> bool:
+        if len(set(paths)) != len(paths):
+            return True
+        for path in paths:
+            if path in reserved:
+                return True
+            try:
+                if path.exists():
+                    return True
+            except OSError:
+                return True
+        reserved.update(paths)
+        return False
 
     def _preview_convert_outputs(self) -> None:
         if self._scan is None or self._current_reco_id is None:
@@ -613,7 +686,7 @@ class ConvertTabMixin:
         space = self._convert_space_var.get()
         subject_type, subject_pose = self._convert_subject_overrides()
 
-        planned = self._planned_output_paths()
+        planned = self._planned_output_paths(preview=True)
         if not planned:
             self._set_convert_settings("No output planned (missing data or reco).")
             self._set_convert_preview("")
@@ -646,14 +719,6 @@ class ConvertTabMixin:
             self._status_var.set("Scan id unavailable.")
             return
 
-        planned = self._planned_output_paths()
-        if not planned:
-            self._status_var.set("No output planned.")
-            return
-
-        output_path = planned[0].parent
-        output_path.mkdir(parents=True, exist_ok=True)
-
         subject_type, subject_pose = self._convert_subject_overrides()
         space = self._convert_space_var.get()
 
@@ -676,8 +741,15 @@ class ConvertTabMixin:
             self._status_var.set("No NIfTI output generated.")
             return
         nii_list = list(nii) if isinstance(nii, tuple) else [nii]
+        planned = self._planned_output_paths(preview=False, count=len(nii_list))
+        if not planned:
+            self._status_var.set("No output planned.")
+            return
         if len(nii_list) != len(planned):
             planned = planned[: len(nii_list)]
+
+        output_path = planned[0].parent
+        output_path.mkdir(parents=True, exist_ok=True)
 
         for dest, img in zip(planned, nii_list):
             try:
