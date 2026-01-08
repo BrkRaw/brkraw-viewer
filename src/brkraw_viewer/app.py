@@ -2150,6 +2150,28 @@ def launch(
     info_spec: Optional[str],
 ) -> int:
     config_core.configure_logging()
+    if isinstance(path, str) and path.strip():
+        path = str(Path(path).expanduser())
+        candidate = Path(path)
+        suffix_lower = candidate.suffix.lower()
+        variants = [candidate]
+        if suffix_lower == ".zip":
+            variants.append(candidate.with_suffix(".zip"))
+        elif suffix_lower == ".pvdatasets":
+            variants.append(candidate.with_suffix(".PvDatasets"))
+            variants.append(candidate.with_suffix(".pvdatasets"))
+        exists = False
+        for variant in variants:
+            try:
+                if variant.exists():
+                    exists = True
+                    path = str(variant)
+                    break
+            except OSError:
+                continue
+        if not exists:
+            print(f"Error: path not found: {path}", file=sys.stderr)
+            return 2
     if path:
         try:
             print(f"Opening {path} ...", flush=True)
