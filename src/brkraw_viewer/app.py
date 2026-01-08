@@ -164,19 +164,25 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             )
             spinner_thread.start()
         try:
-            logger.info("Opening dataset: %s", path)
+            logger.debug("Opening dataset: %s", path)
             self._load_path(path, scan_id=scan_id, reco_id=reco_id)
-            logger.info("Open complete.")
+            logger.debug("Open complete.")
         finally:
             stop_event.set()
             if spinner_thread is not None:
                 spinner_thread.join(timeout=0.5)
             if sys.stdout and getattr(sys.stdout, "isatty", lambda: False)():
                 try:
-                    sys.stdout.write("\r" + (" " * 40) + "\r")
+                    sys.stdout.write("\rOpening done.\n")
                     sys.stdout.flush()
                 except Exception:
                     pass
+
+            scans = len(self._scan_ids) if isinstance(self._scan_ids, list) else 0
+            try:
+                print(f"Loaded dataset with {scans} scan(s). Open complete.", flush=True)
+            except Exception:
+                pass
 
     @staticmethod
     def _console_spinner(stop_event: threading.Event, label: str) -> None:
@@ -751,7 +757,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._status_var.set("No scans found.")
             logger.warning("No scans found in dataset.")
             return
-        logger.info("Loaded dataset with %d scan(s).", len(self._scan_ids))
+        logger.debug("Loaded dataset with %d scan(s).", len(self._scan_ids))
 
         self._update_subject_info()
         self._populate_scan_list()
@@ -2172,9 +2178,10 @@ def launch(
         if not exists:
             print(f"Error: path not found: {path}", file=sys.stderr)
             return 2
-    if path:
+    if path and sys.stdout and getattr(sys.stdout, "isatty", lambda: False)():
         try:
-            print(f"Opening {path} ...", flush=True)
+            print(f"Loading: {path}", flush=True)
+            print("Opening |", end="", flush=True)
         except Exception:
             pass
     app = ViewerApp(
