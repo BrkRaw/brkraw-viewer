@@ -1503,8 +1503,8 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
     def _estimate_slicepack_count(self) -> int:
         return super()._estimate_slicepack_count()
 
-    def _planned_output_paths(self) -> list[Path]:
-        return super()._planned_output_paths()
+    def _planned_output_paths(self, *, preview: bool, count: Optional[int] = None) -> list[Path]:
+        return super()._planned_output_paths(preview=preview, count=count)
 
     def _preview_convert_outputs(self) -> None:
         super()._preview_convert_outputs()
