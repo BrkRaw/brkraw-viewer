@@ -78,6 +78,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._x_var = tk.IntVar(value=0)
         self._y_var = tk.IntVar(value=0)
         self._z_var = tk.IntVar(value=0)
+        self._affine_flip_x_var = tk.BooleanVar(value=False)
+        self._affine_flip_y_var = tk.BooleanVar(value=False)
+        self._affine_flip_z_var = tk.BooleanVar(value=False)
         self._frame_var = tk.IntVar(value=0)
         self._slicepack_var = tk.IntVar(value=0)
         self._space_var = tk.StringVar(value="scanner")
@@ -461,44 +464,34 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         slider_inner = ttk.Frame(slider_bar)
         slider_inner.grid(row=0, column=0)
 
-        ttk.Label(slider_inner, text="X").pack(side=tk.LEFT, padx=(0, 4))
-        self._x_scale = tk.Scale(
-            slider_inner,
-            from_=0,
-            to=0,
-            orient=tk.HORIZONTAL,
-            showvalue=True,
-            command=self._on_x_change,
-            length=140,
-        )
-        self._x_scale.pack(side=tk.LEFT)
-        self._x_scale.configure(variable=self._x_var)
+        def _axis_box(axis: str, var: tk.IntVar, flip_var: tk.BooleanVar, on_change):
+            box = ttk.Frame(slider_inner)
+            box.pack(side=tk.LEFT, padx=(0, 6))
+            ttk.Checkbutton(
+                box,
+                text=f"Flip {axis}",
+                variable=flip_var,
+                command=self._on_affine_override_change,
+            ).pack(side=tk.TOP, anchor="center")
+            row = ttk.Frame(box)
+            row.pack(side=tk.TOP)
+            ttk.Label(row, text=axis).pack(side=tk.LEFT, padx=(0, 4))
+            scale = tk.Scale(
+                row,
+                from_=0,
+                to=0,
+                orient=tk.HORIZONTAL,
+                showvalue=True,
+                command=on_change,
+                length=140,
+            )
+            scale.pack(side=tk.LEFT)
+            scale.configure(variable=var)
+            return scale
 
-        ttk.Label(slider_inner, text="Y").pack(side=tk.LEFT, padx=(6, 4))
-        self._y_scale = tk.Scale(
-            slider_inner,
-            from_=0,
-            to=0,
-            orient=tk.HORIZONTAL,
-            showvalue=True,
-            command=self._on_y_change,
-            length=140,
-        )
-        self._y_scale.pack(side=tk.LEFT)
-        self._y_scale.configure(variable=self._y_var)
-
-        ttk.Label(slider_inner, text="Z").pack(side=tk.LEFT, padx=(6, 4))
-        self._z_scale = tk.Scale(
-            slider_inner,
-            from_=0,
-            to=0,
-            orient=tk.HORIZONTAL,
-            showvalue=True,
-            command=self._on_z_change,
-            length=140,
-        )
-        self._z_scale.pack(side=tk.LEFT)
-        self._z_scale.configure(variable=self._z_var)
+        self._x_scale = _axis_box("X", self._x_var, self._affine_flip_x_var, self._on_x_change)
+        self._y_scale = _axis_box("Y", self._y_var, self._affine_flip_y_var, self._on_y_change)
+        self._z_scale = _axis_box("Z", self._z_var, self._affine_flip_z_var, self._on_z_change)
 
         ttk.Checkbutton(
             slider_inner,
@@ -1710,6 +1703,11 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if self._scan is None:
             return None
 
+        extra = {
+            "flip_x": bool(self._affine_flip_x_var.get()),
+            "flip_y": bool(self._affine_flip_y_var.get()),
+            "flip_z": bool(self._affine_flip_z_var.get()),
+        }
         selected_space = (self._space_var.get() or "").strip()
         if selected_space not in {"raw", "scanner", "subject_ras"}:
             selected_space = "scanner"
@@ -1721,6 +1719,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                     space=selected_space,
                     override_subject_type=None,
                     override_subject_pose=None,
+                    **extra,
                 )
             except Exception:
                 pass
@@ -1730,6 +1729,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 space="raw",
                 override_subject_type=None,
                 override_subject_pose=None,
+                **extra,
             )
             if raw_affine is None:
                 return None
@@ -1755,6 +1755,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                     space=space_candidate,
                     override_subject_type=override_type,
                     override_subject_pose=override_pose,
+                    **extra,
                 )
                 if affine is not None:
                     return affine
@@ -1766,6 +1767,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             space="raw",
             override_subject_type=None,
             override_subject_pose=None,
+            **extra,
         )
         if raw_affine is None:
             return None
@@ -1775,6 +1777,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             for aff in affines
         ]
         return tuple(affines_subject) if isinstance(raw_affine, tuple) else affines_subject[0]
+
+    def _on_affine_override_change(self) -> None:
+        self._maybe_load_viewer()
 
     @staticmethod
     def _cast_subject_type(value: Optional[str]) -> SubjectType:
