@@ -1655,6 +1655,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             (self._subject_type_var.get() or "").strip(),
             (self._pose_primary_var.get() or "").strip(),
             (self._pose_secondary_var.get() or "").strip(),
+            bool(self._affine_flip_x_var.get()),
+            bool(self._affine_flip_y_var.get()),
+            bool(self._affine_flip_z_var.get()),
         )
 
     def _maybe_load_viewer(self) -> None:
