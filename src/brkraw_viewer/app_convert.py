@@ -150,7 +150,7 @@ class ConvertTabMixin:
         self._layout_key_remove_button = ttk.Button(key_buttons, text="-", command=self._remove_selected_layout_key)
         self._layout_key_remove_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
-        convert_frame = ttk.LabelFrame(layout_tab, text="Convert", padding=(8, 8))
+        convert_frame = ttk.Frame(layout_tab, padding=(8, 8))
         convert_frame.grid(row=1, column=0, sticky="nsew")
         convert_frame.columnconfigure(0, weight=1)
         convert_frame.columnconfigure(1, weight=2)
