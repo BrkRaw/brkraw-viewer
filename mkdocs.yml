@@ -27,4 +27,5 @@ nav:
   - Developer Guide:
       - Viewer Hooks: dev/hooks.md
       - GUI Best Practices: dev/gui.md
+      - Release Flow: dev/release.md
       - Contributors: dev/contributors.md
