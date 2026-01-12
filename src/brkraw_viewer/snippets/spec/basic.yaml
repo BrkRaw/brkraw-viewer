@@ -1,0 +1,5 @@
+Protocol:
+  sources:
+    - file: acqp
+      key: ACQ_protocol_name
+  transform: strip_jcamp_string

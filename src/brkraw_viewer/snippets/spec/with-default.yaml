@@ -1,0 +1,5 @@
+FlipAngle:
+  sources:
+    - file: method
+      key: PVM_FlipAngle
+  default: 0

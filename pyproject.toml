@@ -31,4 +31,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-brkraw_viewer = ["assets/*.png", "assets/*.ico"]
+brkraw_viewer = ["assets/*.png", "assets/*.ico", "snippets/**/*.yaml"]

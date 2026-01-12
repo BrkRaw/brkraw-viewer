@@ -33,6 +33,7 @@ class OrthogonalCanvas(ttk.Frame):
         self._canvas_text_id: Dict[str, Optional[int]] = {"zy": None, "xy": None, "xz": None}
         self._tk_images: Dict[str, Optional[ImageTk.PhotoImage]] = {"zy": None, "xy": None, "xz": None}
         self._markers: Dict[str, list[int]] = {"zy": [], "xy": [], "xz": []}
+        self._boxes: Dict[str, list[int]] = {"zy": [], "xy": [], "xz": []}
         self._click_callback: Optional[ClickCallback] = None
         self._zoom_callback: Optional[ZoomCallback] = None
 
@@ -66,6 +67,15 @@ class OrthogonalCanvas(ttk.Frame):
                     pass
             self._markers[key] = []
 
+    def clear_boxes(self) -> None:
+        for key, canvas in self._canvas_map.items():
+            for box_id in self._boxes[key]:
+                try:
+                    canvas.delete(box_id)
+                except Exception:
+                    pass
+            self._boxes[key] = []
+
     def add_marker(self, view: str, row: int, col: int, color: str) -> None:
         state = self._render_state.get(view)
         if state is None:
@@ -80,6 +90,29 @@ class OrthogonalCanvas(ttk.Frame):
         canvas = self._canvas_map[view]
         marker_id = canvas.create_oval(x - r, y - r, x + r, y + r, outline=color, width=2)
         self._markers[view].append(marker_id)
+
+    def add_box(self, view: str, row0: int, col0: int, row1: int, col1: int, *, color: str, width: int = 2) -> None:
+        state = self._render_state.get(view)
+        if state is None:
+            return
+        img_h, img_w, offset_x, offset_y, target_w, target_h = state
+        if img_h <= 0 or img_w <= 0:
+            return
+        r0 = max(0, min(int(row0), img_h - 1))
+        r1 = max(0, min(int(row1), img_h - 1))
+        c0 = max(0, min(int(col0), img_w - 1))
+        c1 = max(0, min(int(col1), img_w - 1))
+        row_min, row_max = sorted((r0, r1))
+        col_min, col_max = sorted((c0, c1))
+        disp_row_min = img_h - 1 - row_max
+        disp_row_max = img_h - 1 - row_min
+        x0 = offset_x + col_min * target_w / img_w
+        x1 = offset_x + (col_max + 1) * target_w / img_w
+        y0 = offset_y + disp_row_min * target_h / img_h
+        y1 = offset_y + (disp_row_max + 1) * target_h / img_h
+        canvas = self._canvas_map[view]
+        box_id = canvas.create_rectangle(x0, y0, x1, y1, outline=color, width=width)
+        self._boxes[view].append(box_id)
 
     def render_views(
         self,
@@ -104,6 +137,17 @@ class OrthogonalCanvas(ttk.Frame):
         self._last_is_error = is_error
         for canvas in self._canvas_map.values():
             self._render_message(canvas, message, is_error=is_error)
+
+    def show_message_on(self, view: str, message: str, *, is_error: bool = False) -> None:
+        self._last_views = None
+        self._last_titles = None
+        self._last_message = message
+        self._last_is_error = is_error
+        for key, canvas in self._canvas_map.items():
+            if key == view:
+                self._render_message(canvas, message, is_error=is_error)
+            else:
+                canvas.delete("all")
 
     def _render_message(self, canvas: tk.Canvas, message: str, *, is_error: bool) -> None:
         canvas.delete("all")
@@ -136,6 +180,15 @@ class OrthogonalCanvas(ttk.Frame):
     ) -> None:
         canvas.delete("all")
         self._markers[key] = []
+        self._boxes[key] = []
+        img = np.asarray(img)
+        if np.iscomplexobj(img):
+            img = np.abs(img)
+        else:
+            try:
+                img = img.astype(float, copy=False)
+            except Exception:
+                img = img.astype(np.float32, copy=False)
         vmin, vmax = np.nanpercentile(img, (1, 99))
         if np.isclose(vmin, vmax):
             vmax = vmin + 1.0

@@ -1,0 +1,10 @@
+metadata_spec:
+  - name: example-metadata
+    use: metadata.yaml
+    when:
+      Protocol:
+        sources:
+          - file: acqp
+            key: ACQ_protocol_name
+    if:
+      contains: ["$Protocol", "<TAG>"]

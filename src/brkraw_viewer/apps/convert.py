@@ -3,6 +3,9 @@ from __future__ import annotations
 import importlib
 import pprint
 import tkinter as tk
+import logging
+import json
+import yaml
 from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import Any, Iterable, Mapping, Optional, cast
@@ -10,8 +13,11 @@ from typing import Any, Iterable, Mapping, Optional, cast
 from brkraw.core import config as config_core
 from brkraw.core import layout as layout_core
 from brkraw.core.config import resolve_root
+from brkraw.resolver import affine as affine_resolver
 from brkraw.resolver.affine import SubjectPose, SubjectType
+from brkraw.specs import remapper as remapper_core
 
+logger = logging.getLogger("brkraw.viewer")
 
 class ConvertTabMixin:
     # The concrete host (ViewerApp) provides these attributes/methods.
@@ -22,10 +28,20 @@ class ConvertTabMixin:
     _status_var: tk.StringVar
 
     _use_layout_entries_var: tk.BooleanVar
+    _layout_source_var: tk.StringVar
+    _layout_auto_var: tk.BooleanVar
     _layout_template_var: tk.StringVar
     _layout_template_entry: ttk.Entry
+    _layout_template_combo: Optional[ttk.Combobox]
+    _layout_source_combo: Optional[ttk.Combobox]
+    _layout_auto_check: Optional[ttk.Checkbutton]
     _slicepack_suffix_var: tk.StringVar
     _output_dir_var: tk.StringVar
+    _layout_rule_display_var: tk.StringVar
+    _layout_info_spec_display_var: tk.StringVar
+    _layout_metadata_spec_display_var: tk.StringVar
+    _layout_context_map_display_var: tk.StringVar
+    _layout_template_manual: str
 
     _layout_info_spec_name_var: tk.StringVar
     _layout_info_spec_match_var: tk.StringVar
@@ -40,21 +56,39 @@ class ConvertTabMixin:
     _layout_keys_title: tk.StringVar
     _layout_key_add_button: Optional[ttk.Button]
     _layout_key_remove_button: Optional[ttk.Button]
+    _addon_context_map_var: tk.StringVar
+    _addon_output_payload: Optional[Any]
+    _convert_sidecar_var: tk.BooleanVar
+    _convert_sidecar_format_var: tk.StringVar
+    _sidecar_format_frame: ttk.Frame
+    _rule_name_var: tk.StringVar
+
+    def _resolve_spec_path(self) -> Optional[str]: ...
+    def _spec_record_from_path(self, path: Optional[str]) -> dict[str, Any]: ...
 
     _convert_space_var: tk.StringVar
     _convert_use_viewer_pose_var: tk.BooleanVar
+    _convert_flip_x_var: tk.BooleanVar
+    _convert_flip_y_var: tk.BooleanVar
+    _convert_flip_z_var: tk.BooleanVar
     _convert_subject_type_var: tk.StringVar
     _convert_pose_primary_var: tk.StringVar
     _convert_pose_secondary_var: tk.StringVar
     _convert_subject_type_combo: ttk.Combobox
     _convert_pose_primary_combo: ttk.Combobox
     _convert_pose_secondary_combo: ttk.Combobox
+    _convert_flip_x_check: ttk.Checkbutton
+    _convert_flip_y_check: ttk.Checkbutton
+    _convert_flip_z_check: ttk.Checkbutton
     _convert_settings_text: Optional[tk.Text]
     _convert_preview_text: Optional[tk.Text]
 
     _subject_type_var: tk.StringVar
     _pose_primary_var: tk.StringVar
     _pose_secondary_var: tk.StringVar
+    _affine_flip_x_var: tk.BooleanVar
+    _affine_flip_y_var: tk.BooleanVar
+    _affine_flip_z_var: tk.BooleanVar
 
     def _installed_specs(self) -> list[dict[str, Any]]: ...
     def _auto_selected_spec_path(self, kind: str) -> Optional[str]: ...
@@ -73,54 +107,51 @@ class ConvertTabMixin:
         output_layout.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         output_layout.columnconfigure(1, weight=1)
 
-        ttk.Checkbutton(
+        ttk.Label(output_layout, text="Layout source").grid(row=0, column=0, sticky="w")
+        self._layout_source_combo = ttk.Combobox(
             output_layout,
-            text="Use config layout_entries",
-            variable=self._use_layout_entries_var,
+            textvariable=self._layout_source_var,
+            values=tuple(self._layout_source_choices()),
+            state="readonly",
+        )
+        self._layout_source_combo.grid(row=0, column=1, sticky="ew")
+        self._layout_source_combo.bind("<<ComboboxSelected>>", lambda *_: self._update_layout_controls())
+        self._layout_auto_check = ttk.Checkbutton(
+            output_layout,
+            text="Auto",
+            variable=self._layout_auto_var,
             command=self._update_layout_controls,
-        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        )
+        self._layout_auto_check.grid(row=0, column=2, sticky="e")
 
-        ttk.Label(output_layout, text="Template").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(output_layout, text="Rule").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(output_layout, textvariable=self._layout_rule_display_var, state="readonly").grid(
+            row=1, column=1, sticky="ew", pady=(8, 0)
+        )
+
+        ttk.Label(output_layout, text="Info spec").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(output_layout, textvariable=self._layout_info_spec_display_var, state="readonly").grid(
+            row=2, column=1, sticky="ew", pady=(6, 0)
+        )
+
+        ttk.Label(output_layout, text="Metadata spec").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(output_layout, textvariable=self._layout_metadata_spec_display_var, state="readonly").grid(
+            row=3, column=1, sticky="ew", pady=(6, 0)
+        )
+
+        ttk.Label(output_layout, text="Context map").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(output_layout, textvariable=self._layout_context_map_display_var, state="readonly").grid(
+            row=4, column=1, sticky="ew", pady=(6, 0)
+        )
+
+        ttk.Label(output_layout, text="Template").grid(row=5, column=0, sticky="w", pady=(10, 0))
         self._layout_template_entry = ttk.Entry(output_layout, textvariable=self._layout_template_var)
-        self._layout_template_entry.grid(row=1, column=1, sticky="ew", pady=(8, 0))
+        self._layout_template_entry.grid(row=5, column=1, sticky="ew", pady=(10, 0))
+        self._layout_template_combo = None
 
-        ttk.Label(output_layout, text="Slicepack suffix").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(output_layout, textvariable=self._slicepack_suffix_var).grid(row=2, column=1, sticky="ew", pady=(8, 0))
-
-        ttk.Label(output_layout, text="Info spec").grid(row=3, column=0, sticky="w", pady=(8, 0))
-        self._layout_info_spec_combo = ttk.Combobox(
-            output_layout,
-            textvariable=self._layout_info_spec_name_var,
-            values=("None",),
-            state="disabled",
-        )
-        self._layout_info_spec_combo.grid(row=3, column=1, sticky="ew", pady=(8, 0))
-        ttk.Label(output_layout, textvariable=self._layout_info_spec_match_var).grid(
-            row=3, column=2, sticky="e", padx=(6, 0), pady=(8, 0)
-        )
-        self._layout_info_spec_combo.bind("<<ComboboxSelected>>", lambda *_: self._refresh_layout_spec_status())
-
-        ttk.Entry(output_layout, textvariable=self._layout_info_spec_file_var).grid(row=4, column=1, sticky="ew", pady=(6, 0))
-        ttk.Button(output_layout, text="Browse", command=lambda: self._browse_layout_spec_file(kind="info_spec")).grid(
-            row=4, column=2, sticky="e", padx=(6, 0), pady=(6, 0)
-        )
-
-        ttk.Label(output_layout, text="Metadata spec").grid(row=5, column=0, sticky="w", pady=(10, 0))
-        self._layout_metadata_spec_combo = ttk.Combobox(
-            output_layout,
-            textvariable=self._layout_metadata_spec_name_var,
-            values=("None",),
-            state="disabled",
-        )
-        self._layout_metadata_spec_combo.grid(row=5, column=1, sticky="ew", pady=(10, 0))
-        ttk.Label(output_layout, textvariable=self._layout_metadata_spec_match_var).grid(
-            row=5, column=2, sticky="e", padx=(6, 0), pady=(10, 0)
-        )
-        self._layout_metadata_spec_combo.bind("<<ComboboxSelected>>", lambda *_: self._refresh_layout_spec_status())
-
-        ttk.Entry(output_layout, textvariable=self._layout_metadata_spec_file_var).grid(row=6, column=1, sticky="ew", pady=(6, 0))
-        ttk.Button(output_layout, text="Browse", command=lambda: self._browse_layout_spec_file(kind="metadata_spec")).grid(
-            row=6, column=2, sticky="e", padx=(6, 0), pady=(6, 0)
+        ttk.Label(output_layout, text="Slicepack suffix").grid(row=6, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(output_layout, textvariable=self._slicepack_suffix_var, state="readonly").grid(
+            row=6, column=1, sticky="ew", pady=(6, 0)
         )
 
         output_layout.columnconfigure(3, weight=0)
@@ -166,7 +197,31 @@ class ConvertTabMixin:
             row=0, column=2, padx=(6, 0), pady=(0, 6)
         )
 
-        ttk.Label(convert_left, text="Space").grid(row=1, column=0, sticky="w")
+        sidecar_row = ttk.Frame(convert_left)
+        sidecar_row.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        ttk.Checkbutton(
+            sidecar_row,
+            text="Sidecar",
+            variable=self._convert_sidecar_var,
+            command=self._update_sidecar_controls,
+        ).pack(side=tk.LEFT)
+        self._sidecar_format_frame = ttk.Frame(sidecar_row)
+        self._sidecar_format_frame.pack(side=tk.LEFT, padx=(12, 0))
+        ttk.Label(self._sidecar_format_frame, text="Format").pack(side=tk.LEFT)
+        ttk.Radiobutton(
+            self._sidecar_format_frame,
+            text="JSON",
+            value="json",
+            variable=self._convert_sidecar_format_var,
+        ).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Radiobutton(
+            self._sidecar_format_frame,
+            text="YAML",
+            value="yaml",
+            variable=self._convert_sidecar_format_var,
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
+        ttk.Label(convert_left, text="Space").grid(row=2, column=0, sticky="w")
         convert_space = ttk.Combobox(
             convert_left,
             textvariable=self._convert_space_var,
@@ -174,18 +229,18 @@ class ConvertTabMixin:
             state="readonly",
             width=12,
         )
-        convert_space.grid(row=1, column=1, sticky="w")
+        convert_space.grid(row=2, column=1, sticky="w")
         convert_space.bind("<<ComboboxSelected>>", lambda *_: self._update_convert_space_controls())
 
         ttk.Checkbutton(
             convert_left,
-            text="Use Viewer type/pose",
+            text="Use Viewer orientation",
             variable=self._convert_use_viewer_pose_var,
             command=self._update_convert_space_controls,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         convert_subject_row = ttk.Frame(convert_left)
-        convert_subject_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        convert_subject_row.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         ttk.Label(convert_subject_row, text="Subject Type").pack(side=tk.LEFT)
         self._convert_subject_type_combo = ttk.Combobox(
             convert_subject_row,
@@ -213,12 +268,36 @@ class ConvertTabMixin:
         )
         self._convert_pose_secondary_combo.pack(side=tk.LEFT, padx=(4, 0))
 
+        convert_flip_row = ttk.Frame(convert_left)
+        convert_flip_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ttk.Label(convert_flip_row, text="Flip").pack(side=tk.LEFT)
+        self._convert_flip_x_check = ttk.Checkbutton(
+            convert_flip_row,
+            text="X",
+            variable=self._convert_flip_x_var,
+        )
+        self._convert_flip_x_check.pack(side=tk.LEFT, padx=(8, 0))
+        self._convert_flip_y_check = ttk.Checkbutton(
+            convert_flip_row,
+            text="Y",
+            variable=self._convert_flip_y_var,
+        )
+        self._convert_flip_y_check.pack(side=tk.LEFT, padx=(6, 0))
+        self._convert_flip_z_check = ttk.Checkbutton(
+            convert_flip_row,
+            text="Z",
+            variable=self._convert_flip_z_var,
+        )
+        self._convert_flip_z_check.pack(side=tk.LEFT, padx=(6, 0))
+
         actions = ttk.Frame(convert_left)
-        actions.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        actions.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         actions.columnconfigure(0, weight=1)
         actions.columnconfigure(1, weight=1)
         ttk.Button(actions, text="Preview Outputs", command=self._preview_convert_outputs).grid(row=0, column=0, sticky="ew")
         ttk.Button(actions, text="Convert", command=self._convert_current_scan).grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+        self._update_sidecar_controls()
 
         preview_box = ttk.LabelFrame(convert_frame, text="Output Preview", padding=(6, 6))
         preview_box.grid(row=0, column=1, sticky="nsew")
@@ -271,19 +350,27 @@ class ConvertTabMixin:
             self._convert_subject_type_combo.configure(state="disabled")
             self._convert_pose_primary_combo.configure(state="disabled")
             self._convert_pose_secondary_combo.configure(state="disabled")
+            self._convert_flip_x_var.set(bool(self._affine_flip_x_var.get()))
+            self._convert_flip_y_var.set(bool(self._affine_flip_y_var.get()))
+            self._convert_flip_z_var.set(bool(self._affine_flip_z_var.get()))
+            self._convert_flip_x_check.configure(state="disabled")
+            self._convert_flip_y_check.configure(state="disabled")
+            self._convert_flip_z_check.configure(state="disabled")
             return
         state = "readonly" if enabled else "disabled"
         self._convert_subject_type_combo.configure(state=state)
         self._convert_pose_primary_combo.configure(state=state)
         self._convert_pose_secondary_combo.configure(state=state)
+        flip_state = "normal" if enabled else "disabled"
+        self._convert_flip_x_check.configure(state=flip_state)
+        self._convert_flip_y_check.configure(state=flip_state)
+        self._convert_flip_z_check.configure(state=flip_state)
 
     def _update_layout_controls(self) -> None:
-        use_entries = bool(self._use_layout_entries_var.get())
-        try:
-            self._layout_template_entry.configure(state="disabled" if use_entries else "normal")
-        except Exception:
-            pass
-        button_state = "disabled" if use_entries else "normal"
+        self._sync_layout_source_state()
+        self._refresh_layout_display()
+        template_enabled = self._layout_template_enabled()
+        button_state = "normal" if template_enabled else "disabled"
         for btn in (getattr(self, "_layout_key_add_button", None), getattr(self, "_layout_key_remove_button", None)):
             if btn is None:
                 continue
@@ -291,103 +378,173 @@ class ConvertTabMixin:
                 btn.configure(state=button_state)
             except Exception:
                 pass
-        if use_entries and self._layout_key_listbox is not None:
+        try:
+            if template_enabled:
+                self._layout_template_entry.state(["!disabled"])
+            else:
+                self._layout_template_entry.state(["disabled"])
+        except Exception:
+            pass
+        if not template_enabled and self._layout_key_listbox is not None:
             self._layout_key_listbox.selection_clear(0, tk.END)
         self._refresh_layout_keys()
 
+    def _update_sidecar_controls(self) -> None:
+        enable = bool(self._convert_sidecar_var.get())
+        for child in getattr(self, "_sidecar_format_frame", ttk.Frame()).winfo_children():
+            try:
+                state_fn = getattr(child, "state", None)
+                if callable(state_fn):
+                    state_fn(["!disabled"] if enable else ["disabled"])
+            except Exception:
+                pass
+
+    def _layout_source_choices(self) -> list[str]:
+        return ["GUI template", "Context map", "Config"]
+
+    def _layout_source_mode(self) -> str:
+        if bool(self._layout_auto_var.get()):
+            return "auto"
+        value = (self._layout_source_var.get() or "").strip()
+        if value not in self._layout_source_choices():
+            return "Config"
+        return value
+
+    def _has_context_map(self) -> bool:
+        path = (self._addon_context_map_var.get() or "").strip()
+        return bool(path) and Path(path).exists()
+
+    def _sync_layout_source_state(self) -> None:
+        if self._layout_source_combo is None:
+            return
+        if bool(self._layout_auto_var.get()):
+            self._layout_source_combo.configure(state="disabled")
+            return
+        self._layout_source_combo.configure(state="readonly")
+        if self._layout_source_var.get() not in self._layout_source_choices():
+            self._layout_source_var.set("Config")
+        if not self._has_context_map() and self._layout_source_var.get() == "Context map":
+            self._layout_source_var.set("Config")
+
+    def _layout_template_enabled(self) -> bool:
+        if bool(self._layout_auto_var.get()):
+            return False
+        return self._layout_source_var.get() == "GUI template"
+
+    def _refresh_layout_display(self) -> None:
+        rule_display = ""
+        try:
+            rule_name = (self._rule_name_var.get() or "").strip()
+            if rule_name and rule_name != "None":
+                rule_display = rule_name
+        except Exception:
+            rule_display = ""
+        self._layout_rule_display_var.set(rule_display)
+
+        info_spec = ""
+        meta_spec = ""
+        spec_path = None
+        try:
+            spec_path = self._resolve_spec_path()
+        except Exception:
+            spec_path = None
+        if spec_path:
+            record = self._spec_record_from_path(spec_path)
+            category = record.get("category")
+            if category == "metadata_spec":
+                meta_spec = spec_path
+            else:
+                info_spec = spec_path
+        if not info_spec:
+            info_spec = "Default"
+        if not meta_spec:
+            meta_spec = "None"
+        self._layout_info_spec_display_var.set(info_spec)
+        self._layout_metadata_spec_display_var.set(meta_spec)
+
+        context_map = (self._addon_context_map_var.get() or "").strip()
+        self._layout_context_map_display_var.set(context_map)
+
+        if info_spec and info_spec != "Default":
+            self._layout_info_spec_file_var.set(info_spec)
+        else:
+            self._layout_info_spec_file_var.set("")
+        if meta_spec and meta_spec != "None":
+            self._layout_metadata_spec_file_var.set(meta_spec)
+        else:
+            self._layout_metadata_spec_file_var.set("")
+
+        if bool(self._layout_auto_var.get()):
+            active_template = self._current_layout_template_from_sources()
+            self._layout_template_var.set(active_template)
+            self._slicepack_suffix_var.set(self._current_slicepack_suffix())
+            self._layout_source_var.set(self._auto_layout_source())
+        else:
+            if self._layout_template_var.get() != "":
+                self._layout_template_manual = self._layout_template_var.get()
+            elif self._layout_template_manual:
+                self._layout_template_var.set(self._layout_template_manual)
+            self._slicepack_suffix_var.set(self._current_slicepack_suffix())
+
+    def _current_layout_template_from_sources(self) -> str:
+        layout_template, _, _, _ = self._resolve_layout_sources(reco_id=self._current_reco_id)
+        return layout_template or ""
+
+    def _auto_layout_source(self) -> str:
+        if self._layout_template_manual:
+            return "GUI template"
+        if self._context_map_has_layout():
+            return "Context map"
+        return "Config"
+
+    def _context_map_has_layout(self) -> bool:
+        if not self._has_context_map():
+            return False
+        path = (self._addon_context_map_var.get() or "").strip()
+        try:
+            meta = remapper_core.load_context_map_meta(path)
+        except Exception:
+            return False
+        if not isinstance(meta, dict):
+            return False
+        layout_template = meta.get("layout_template")
+        if isinstance(layout_template, str) and layout_template.strip():
+            return True
+        entries = meta.get("layout_entries") or meta.get("layout_fields")
+        return isinstance(entries, list) and len(entries) > 0
+
+    def _current_slicepack_suffix(self) -> str:
+        _, _, slicepack_suffix, _ = self._resolve_layout_sources(reco_id=self._current_reco_id)
+        return slicepack_suffix or ""
+
+    def _config_layout_templates(self) -> list[str]:
+        templates: list[str] = []
+        config = config_core.load_config(root=None) or {}
+        output_cfg = config.get("output", {})
+        if isinstance(output_cfg, dict):
+            raw_list = output_cfg.get("layout_templates", [])
+            if isinstance(raw_list, list):
+                for item in raw_list:
+                    if isinstance(item, str) and item.strip():
+                        templates.append(item)
+                    elif isinstance(item, dict):
+                        value = item.get("template") or item.get("value")
+                        if isinstance(value, str) and value.strip():
+                            templates.append(value)
+        default_template = config_core.layout_template(root=None)
+        if isinstance(default_template, str) and default_template.strip():
+            if default_template not in templates:
+                templates.insert(0, default_template)
+        return templates
+
     def _refresh_layout_spec_selectors(self) -> None:
-        if self._layout_info_spec_combo is None or self._layout_metadata_spec_combo is None:
-            return
-        if self._scan is None:
-            self._layout_info_spec_combo.configure(values=("Default",), state="disabled")
-            self._layout_metadata_spec_combo.configure(values=("None",), state="disabled")
-            self._layout_info_spec_name_var.set("Default")
-            self._layout_metadata_spec_name_var.set("None")
-            self._refresh_layout_spec_status()
-            return
-
-        info_specs = [
-            s
-            for s in self._installed_specs()
-            if s.get("category") == "info_spec" and s.get("name") not in (None, "<Unknown>")
-        ]
-        meta_specs = [
-            s
-            for s in self._installed_specs()
-            if s.get("category") == "metadata_spec" and s.get("name") not in (None, "<Unknown>")
-        ]
-        info_names = sorted({cast(str, s["name"]) for s in info_specs if isinstance(s.get("name"), str)})
-        meta_names = sorted({cast(str, s["name"]) for s in meta_specs if isinstance(s.get("name"), str)})
-
-        def _auto_name(kind: str, names: list[str]) -> Optional[str]:
-            auto_path = self._auto_selected_spec_path(kind)
-            if not auto_path:
-                return None
-            for name in names:
-                resolved = self._resolve_installed_spec_path(name=name, kind=kind)
-                if resolved and Path(resolved).resolve() == Path(auto_path).resolve():
-                    return name
-            return None
-
-        if info_names:
-            choices = ["Default"] + info_names
-            self._layout_info_spec_combo.configure(values=tuple(choices), state="readonly")
-            if self._layout_info_spec_name_var.get() not in choices:
-                self._layout_info_spec_name_var.set(_auto_name("info_spec", info_names) or "Default")
-        else:
-            self._layout_info_spec_combo.configure(values=("Default",), state="disabled")
-            self._layout_info_spec_name_var.set("Default")
-
-        if meta_names:
-            choices = ["None"] + meta_names
-            self._layout_metadata_spec_combo.configure(values=tuple(choices), state="readonly")
-            if self._layout_metadata_spec_name_var.get() not in choices:
-                self._layout_metadata_spec_name_var.set(_auto_name("metadata_spec", meta_names) or "None")
-        else:
-            self._layout_metadata_spec_combo.configure(values=("None",), state="disabled")
-            self._layout_metadata_spec_name_var.set("None")
-
-        self._refresh_layout_spec_status()
+        return
 
     def _refresh_layout_spec_status(self) -> None:
-        info_name = (self._layout_info_spec_name_var.get() or "Default").strip()
-        meta_name = (self._layout_metadata_spec_name_var.get() or "None").strip()
-        info_path = self._layout_override_info_spec_path()
-        meta_path = self._layout_override_metadata_spec_path()
-
-        auto_info = self._auto_selected_spec_path("info_spec")
-        auto_meta = self._auto_selected_spec_path("metadata_spec")
-
-        if info_name == "Default" and not (self._layout_info_spec_file_var.get() or "").strip():
-            self._layout_info_spec_match_var.set("Default")
-        elif not info_path:
-            self._layout_info_spec_match_var.set("None")
-        else:
-            self._layout_info_spec_match_var.set(
-                "DEFAULT" if auto_info and Path(auto_info).resolve() == Path(info_path).resolve() else "OK"
-            )
-
-        if meta_name == "None" or not meta_path:
-            self._layout_metadata_spec_match_var.set("None")
-        else:
-            self._layout_metadata_spec_match_var.set(
-                "DEFAULT" if auto_meta and Path(auto_meta).resolve() == Path(meta_path).resolve() else "OK"
-            )
-
-        self._refresh_layout_keys()
+        return
 
     def _browse_layout_spec_file(self, *, kind: str) -> None:
-        path = filedialog.askopenfilename(
-            title=f"Select {kind} YAML",
-            filetypes=(("YAML", "*.yaml *.yml"), ("All files", "*.*")),
-        )
-        if not path:
-            return
-        if kind == "info_spec":
-            self._layout_info_spec_file_var.set(path)
-        else:
-            self._layout_metadata_spec_file_var.set(path)
-        self._refresh_layout_spec_status()
+        return
 
     def _layout_builtin_info_spec_paths(self) -> tuple[Optional[str], Optional[str]]:
         try:
@@ -402,23 +559,17 @@ class ConvertTabMixin:
             study_yaml = None
         return study_yaml, scan_yaml
 
-    def _layout_override_info_spec_path(self) -> Optional[str]:
+    def _layout_info_spec_path(self) -> Optional[str]:
         file_path = (self._layout_info_spec_file_var.get() or "").strip()
         if file_path:
             return file_path
-        name = (self._layout_info_spec_name_var.get() or "Default").strip()
-        if name == "Default":
-            return None
-        return self._resolve_installed_spec_path(name=name, kind="info_spec")
+        return None
 
-    def _layout_override_metadata_spec_path(self) -> Optional[str]:
+    def _layout_metadata_spec_path(self) -> Optional[str]:
         file_path = (self._layout_metadata_spec_file_var.get() or "").strip()
         if file_path:
             return file_path
-        name = (self._layout_metadata_spec_name_var.get() or "None").strip()
-        if name == "None":
-            return None
-        return self._resolve_installed_spec_path(name=name, kind="metadata_spec")
+        return None
 
     def _refresh_layout_keys(self) -> None:
         if self._layout_key_listbox is None or self._loader is None or self._scan is None:
@@ -427,8 +578,9 @@ class ConvertTabMixin:
         if scan_id is None:
             return
 
-        info_spec = self._layout_override_info_spec_path()
-        metadata_spec = self._layout_override_metadata_spec_path()
+        info_spec = self._layout_info_spec_path()
+        metadata_spec = self._layout_metadata_spec_path()
+        source_mode = self._layout_source_mode()
         signature = (
             scan_id,
             self._current_reco_id,
@@ -436,19 +588,24 @@ class ConvertTabMixin:
             (self._layout_info_spec_file_var.get() or "").strip(),
             metadata_spec or "None",
             (self._layout_metadata_spec_file_var.get() or "").strip(),
+            source_mode,
+            bool(self._layout_auto_var.get()),
+            (self._layout_template_var.get() or "").strip(),
+            (self._addon_context_map_var.get() or "").strip(),
         )
         if self._layout_key_source_signature is None:
             self._layout_key_source_signature = signature
         elif self._layout_key_source_signature != signature:
             self._layout_key_source_signature = signature
-            if not bool(self._use_layout_entries_var.get()):
+            if self._layout_template_enabled() and not (self._layout_template_var.get() or "").strip():
                 self._layout_template_var.set(config_core.layout_template(root=None) or "")
 
+        context_map = self._current_context_map_path()
         try:
             info = layout_core.load_layout_info(
                 self._loader,
                 scan_id,
-                context_map=None,
+                context_map=context_map,
                 root=resolve_root(None),
                 reco_id=self._current_reco_id,
                 override_info_spec=info_spec,
@@ -512,8 +669,8 @@ class ConvertTabMixin:
         key = self._selected_layout_key()
         if not key:
             return
-        if bool(self._use_layout_entries_var.get()):
-            self._status_var.set("Template is disabled (using layout_entries).")
+        if not self._layout_template_enabled():
+            self._status_var.set("Template is disabled for the current layout source.")
             return
         current = self._layout_template_var.get() or ""
         self._layout_template_var.set(f"{current}{{{key}}}")
@@ -522,8 +679,8 @@ class ConvertTabMixin:
         key = self._selected_layout_key()
         if not key:
             return
-        if bool(self._use_layout_entries_var.get()):
-            self._status_var.set("Template is disabled (using layout_entries).")
+        if not self._layout_template_enabled():
+            self._status_var.set("Template is disabled for the current layout source.")
             return
         token = f"{{{key}}}"
         current = self._layout_template_var.get() or ""
@@ -541,11 +698,108 @@ class ConvertTabMixin:
         return
 
     def _on_layout_key_mouse_down(self, *_: object) -> Optional[str]:
-        if bool(self._use_layout_entries_var.get()):
+        if not self._layout_template_enabled():
             return "break"
         return None
 
-    def _convert_subject_overrides(self) -> tuple[Optional[SubjectType], Optional[SubjectPose]]:
+    def _current_context_map_path(self) -> Optional[str]:
+        if not self._has_context_map():
+            return None
+        path = (self._addon_context_map_var.get() or "").strip()
+        mode = self._layout_source_mode()
+        if mode == "Context map":
+            return path
+        if mode == "auto":
+            gui_template = (self._layout_template_var.get() or "").strip()
+            if gui_template:
+                return None
+            return path
+        return None
+
+    def _resolve_layout_sources(
+        self,
+        *,
+        reco_id: Optional[int],
+    ) -> tuple[Optional[str], Optional[list], str, Optional[str]]:
+        root = resolve_root(None)
+        layout_entries = config_core.layout_entries(root=root)
+        layout_template = config_core.layout_template(root=root)
+        slicepack_suffix = config_core.output_slicepack_suffix(root=root)
+
+        mode = self._layout_source_mode()
+        if mode == "auto":
+            gui_template = (self._layout_template_manual or "").strip()
+        else:
+            gui_template = (self._layout_template_var.get() or "").strip()
+        gui_suffix = (self._slicepack_suffix_var.get() or "").strip()
+        context_map_path: Optional[str] = None
+
+        if mode == "GUI template":
+            if gui_template:
+                layout_template = self._render_template_with_context(gui_template, reco_id=reco_id)
+                layout_entries = None
+                if gui_suffix:
+                    slicepack_suffix = gui_suffix
+            return layout_template, layout_entries, slicepack_suffix, None
+
+        if mode == "Context map":
+            context_map_path = self._current_context_map_path()
+            if context_map_path:
+                try:
+                    meta = remapper_core.load_context_map_meta(context_map_path)
+                except Exception:
+                    meta = {}
+                if isinstance(meta, dict):
+                    map_suffix = meta.get("slicepack_suffix")
+                    map_template = meta.get("layout_template")
+                    map_entries = meta.get("layout_entries") or meta.get("layout_fields")
+                    if isinstance(map_suffix, str) and map_suffix.strip():
+                        slicepack_suffix = map_suffix
+                    if isinstance(map_template, str) and map_template.strip():
+                        layout_template = map_template
+                        layout_entries = None
+                    elif isinstance(map_entries, list):
+                        layout_entries = map_entries
+                        layout_template = None
+            return layout_template, layout_entries, slicepack_suffix, context_map_path
+
+        if mode == "Config":
+            return layout_template, layout_entries, slicepack_suffix, None
+
+        if gui_template:
+            layout_template = self._render_template_with_context(gui_template, reco_id=reco_id)
+            layout_entries = None
+            if gui_suffix:
+                slicepack_suffix = gui_suffix
+            return layout_template, layout_entries, slicepack_suffix, None
+
+        context_map_path = self._current_context_map_path()
+        if context_map_path:
+            try:
+                meta = remapper_core.load_context_map_meta(context_map_path)
+            except Exception:
+                meta = {}
+            if isinstance(meta, dict):
+                map_suffix = meta.get("slicepack_suffix")
+                map_template = meta.get("layout_template")
+                map_entries = meta.get("layout_entries") or meta.get("layout_fields")
+                if isinstance(map_suffix, str) and map_suffix.strip():
+                    slicepack_suffix = map_suffix
+                if isinstance(map_template, str) and map_template.strip():
+                    layout_template = map_template
+                    layout_entries = None
+                elif isinstance(map_entries, list):
+                    layout_entries = map_entries
+                    layout_template = None
+            return layout_template, layout_entries, slicepack_suffix, context_map_path
+
+        return layout_template, layout_entries, slicepack_suffix, None
+
+    def _layout_entries_active(self) -> bool:
+        layout_template, layout_entries, _, _ = self._resolve_layout_sources(reco_id=self._current_reco_id)
+        return layout_template is None and bool(layout_entries)
+
+    def _convert_subject_orientation(self) -> tuple[Optional[SubjectType], Optional[SubjectPose]]:
         if self._convert_space_var.get() != "subject_ras":
             return None, None
         if self._convert_use_viewer_pose_var.get():
@@ -560,6 +814,21 @@ class ConvertTabMixin:
             f"{(self._convert_pose_primary_var.get() or '').strip()}_{(self._convert_pose_secondary_var.get() or '').strip()}"
         )
         return subject_type, subject_pose
+
+    def _convert_flip_settings(self) -> tuple[bool, bool, bool]:
+        if self._convert_space_var.get() != "subject_ras":
+            return False, False, False
+        if self._convert_use_viewer_pose_var.get():
+            return (
+                bool(self._affine_flip_x_var.get()),
+                bool(self._affine_flip_y_var.get()),
+                bool(self._affine_flip_z_var.get()),
+            )
+        return (
+            bool(self._convert_flip_x_var.get()),
+            bool(self._convert_flip_y_var.get()),
+            bool(self._convert_flip_z_var.get()),
+        )
 
     def _estimate_slicepack_count(self) -> int:
         if self._scan is None or self._current_reco_id is None:
@@ -591,28 +860,19 @@ class ConvertTabMixin:
             return []
         count = int(count)
 
-        root = resolve_root(None)
-        layout_entries = config_core.layout_entries(root=root)
-        layout_template = config_core.layout_template(root=root)
-
-        template_override = (self._layout_template_var.get() or "").strip() or None
-        use_entries = bool(self._use_layout_entries_var.get())
-        if not use_entries and template_override:
-            layout_template = self._render_template_with_context(template_override, reco_id=self._current_reco_id)
-            layout_entries = None
-
-        slicepack_suffix = (self._slicepack_suffix_var.get() or "").strip() or config_core.output_slicepack_suffix(
-            root=root
+        layout_template, layout_entries, slicepack_suffix, context_map = self._resolve_layout_sources(
+            reco_id=self._current_reco_id
         )
 
-        info_spec_path = self._layout_override_info_spec_path()
-        metadata_spec_path = self._layout_override_metadata_spec_path()
+        info_spec_path = self._layout_info_spec_path()
+        metadata_spec_path = self._layout_metadata_spec_path()
+        root = resolve_root(None)
 
         try:
             info = layout_core.load_layout_info(
                 self._loader,
                 scan_id,
-                context_map=None,
+                context_map=context_map,
                 root=root,
                 reco_id=self._current_reco_id,
                 override_info_spec=info_spec_path,
@@ -637,7 +897,7 @@ class ConvertTabMixin:
                     scan_id,
                     layout_entries=layout_entries,
                     layout_template=layout_template,
-                    context_map=None,
+                    context_map=context_map,
                     root=root,
                     reco_id=self._current_reco_id,
                     counter=counter,
@@ -730,7 +990,8 @@ class ConvertTabMixin:
             return
 
         space = self._convert_space_var.get()
-        subject_type, subject_pose = self._convert_subject_overrides()
+        subject_type, subject_pose = self._convert_subject_orientation()
+        flip_x, flip_y, flip_z = self._convert_flip_settings()
 
         planned = self._planned_output_paths(preview=True)
         if not planned:
@@ -738,23 +999,41 @@ class ConvertTabMixin:
             self._set_convert_preview("")
             return
 
-        settings = {
-            "scan_id": scan_id,
-            "reco_id": self._current_reco_id,
-            "space": space,
-            "use_viewer_type_pose": bool(self._convert_use_viewer_pose_var.get()),
-            "override_subject_type": str(subject_type) if subject_type is not None else None,
-            "override_subject_pose": str(subject_pose) if subject_pose is not None else None,
-            "use_layout_entries": bool(self._use_layout_entries_var.get()),
-            "template": self._layout_template_var.get(),
-            "slicepack_suffix": self._slicepack_suffix_var.get(),
-            "layout_info_spec": self._layout_info_spec_name_var.get(),
-            "layout_info_spec_file": self._layout_info_spec_file_var.get(),
-            "layout_metadata_spec": self._layout_metadata_spec_name_var.get(),
-            "layout_metadata_spec_file": self._layout_metadata_spec_file_var.get(),
-        }
-        self._set_convert_settings(pprint.pformat(settings, sort_dicts=False, width=120))
-        self._set_convert_preview("\n".join(str(p) for p in planned))
+        meta_text = self._preview_metadata_yaml(scan_id)
+        self._set_convert_settings(meta_text)
+
+        preview_list = list(planned)
+        if self._convert_sidecar_var.get():
+            preview_list.extend(self._planned_sidecar_paths(planned))
+        self._set_convert_preview("\n".join(str(p) for p in preview_list))
+
+    def _preview_metadata_yaml(self, scan_id: int) -> str:
+        layout_template, layout_entries, _, context_map = self._resolve_layout_sources(reco_id=self._current_reco_id)
+        info_spec_path = self._layout_info_spec_path()
+        metadata_spec_path = self._layout_metadata_spec_path()
+        try:
+            info = layout_core.load_layout_info(
+                self._loader,
+                scan_id,
+                context_map=context_map,
+                root=resolve_root(None),
+                reco_id=self._current_reco_id,
+                override_info_spec=info_spec_path,
+                override_metadata_spec=metadata_spec_path,
+            )
+        except Exception as exc:
+            return f"Metadata preview failed:\n{exc}"
+        return yaml.safe_dump(info, sort_keys=False)
+
+    def _planned_sidecar_paths(self, planned: list[Path]) -> list[Path]:
+        suffix = ".json" if self._convert_sidecar_format_var.get() == "json" else ".yaml"
+        sidecars: list[Path] = []
+        for path in planned:
+            sidecar = path.with_suffix(suffix)
+            if path.name.endswith(".nii.gz"):
+                sidecar = path.with_name(path.name[:-7] + suffix)
+            sidecars.append(sidecar)
+        return sidecars
 
     def _convert_current_scan(self) -> None:
         if self._loader is None or self._scan is None or self._current_reco_id is None:
@@ -765,9 +1044,10 @@ class ConvertTabMixin:
             self._status_var.set("Scan id unavailable.")
             return
 
-        subject_type, subject_pose = self._convert_subject_overrides()
+        subject_type, subject_pose = self._convert_subject_orientation()
         space = self._convert_space_var.get()
 
+        flip_x, flip_y, flip_z = self._convert_flip_settings()
         try:
             nii = self._loader.convert(
                 scan_id,
@@ -797,11 +1077,71 @@ class ConvertTabMixin:
         output_path = planned[0].parent
         output_path.mkdir(parents=True, exist_ok=True)
 
+        sidecar_meta = self._build_sidecar_metadata(scan_id, self._current_reco_id)
+
         for dest, img in zip(planned, nii_list):
+            if flip_x or flip_y or flip_z:
+                try:
+                    affine = affine_resolver.flip_affine(
+                        img.affine,
+                        flip_x=flip_x,
+                        flip_y=flip_y,
+                        flip_z=flip_z,
+                    )
+                    img.set_qform(affine, code=int(img.header.get("qform_code", 1) or 1))
+                    img.set_sform(affine, code=int(img.header.get("sform_code", 1) or 1))
+                except Exception:
+                    pass
             try:
                 img.to_filename(str(dest))
             except Exception as exc:
                 self._set_convert_preview(f"Save failed: {exc}\n\nPath: {dest}")
                 self._status_var.set("Save failed.")
                 return
+            if sidecar_meta:
+                try:
+                    self._write_sidecar(dest, sidecar_meta)
+                except Exception as exc:
+                    self._set_convert_preview(f"Sidecar failed: {exc}\n\nPath: {dest}")
+                    self._status_var.set("Sidecar failed.")
+                    return
         self._status_var.set(f"Saved {len(nii_list)} file(s) to {output_path}")
+        logger.info("Saved %d file(s) to %s", len(nii_list), output_path)
+        try:
+            from tkinter import messagebox
+
+            messagebox.showinfo("Convert", f"Saved {len(nii_list)} file(s).\n{output_path}")
+        except Exception:
+            pass
+
+    def _build_sidecar_metadata(self, scan_id: int, reco_id: Optional[int]) -> Optional[Mapping[str, Any]]:
+        if not bool(self._convert_sidecar_var.get()):
+            return None
+        get_metadata = getattr(self._loader, "get_metadata", None)
+        if not callable(get_metadata):
+            self._status_var.set("Metadata sidecar unavailable.")
+            return None
+        metadata_spec = self._layout_metadata_spec_path()
+        try:
+            meta = get_metadata(
+                scan_id,
+                reco_id=reco_id,
+                spec=metadata_spec if metadata_spec else None,
+                context_map=self._current_context_map_path(),
+            )
+        except Exception:
+            return None
+        if isinstance(meta, tuple) and meta:
+            meta = meta[0]
+        return meta if isinstance(meta, Mapping) else None
+
+    def _write_sidecar(self, path: Path, meta: Mapping[str, Any]) -> None:
+        payload = dict(meta)
+        suffix = ".json" if self._convert_sidecar_format_var.get() == "json" else ".yaml"
+        sidecar = path.with_suffix(suffix)
+        if path.name.endswith(".nii.gz"):
+            sidecar = path.with_name(path.name[:-7] + suffix)
+        if suffix == ".yaml":
+            sidecar.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+        else:
+            sidecar.write_text(json.dumps(payload, indent=2, sort_keys=False), encoding="utf-8")

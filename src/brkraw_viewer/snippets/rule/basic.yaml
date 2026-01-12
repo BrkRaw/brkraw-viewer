@@ -1,0 +1,10 @@
+info_spec:
+  - name: example
+    use: example.yaml
+    when:
+      Method:
+        sources:
+          - file: method
+            key: Method
+    if:
+      eq: ["$Method", "<METHOD>"]

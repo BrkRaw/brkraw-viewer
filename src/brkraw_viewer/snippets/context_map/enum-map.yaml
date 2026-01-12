@@ -1,0 +1,5 @@
+SubjectType:
+  type: mapping
+  values:
+    "biped": "human"
+    "quadruped": "animal"
