@@ -65,6 +65,8 @@ class ConvertTabMixin:
 
     def _resolve_spec_path(self) -> Optional[str]: ...
     def _spec_record_from_path(self, path: Optional[str]) -> dict[str, Any]: ...
+    def _auto_applied_rule(self) -> Optional[dict[str, Any]]: ...
+    # def _on_layout_template_change(self) -> None: ...
 
     _convert_space_var: tk.StringVar
     _convert_use_viewer_pose_var: tk.BooleanVar
@@ -387,6 +389,11 @@ class ConvertTabMixin:
             pass
         if not template_enabled and self._layout_key_listbox is not None:
             self._layout_key_listbox.selection_clear(0, tk.END)
+        if self._layout_key_listbox is not None:
+            try:
+                self._layout_key_listbox.configure(state=tk.NORMAL if template_enabled else tk.DISABLED)
+            except Exception:
+                pass
         self._refresh_layout_keys()
 
     def _update_sidecar_controls(self) -> None:
@@ -431,6 +438,10 @@ class ConvertTabMixin:
             return False
         return self._layout_source_var.get() == "GUI template"
 
+    def _on_layout_template_change(self) -> None:
+        if not bool(self._layout_auto_var.get()):
+            self._layout_template_manual = (self._layout_template_var.get() or "")
+
     def _refresh_layout_display(self) -> None:
         rule_display = ""
         try:
@@ -439,6 +450,10 @@ class ConvertTabMixin:
                 rule_display = rule_name
         except Exception:
             rule_display = ""
+        if not rule_display:
+            auto_rule = self._auto_applied_rule()
+            if auto_rule is not None:
+                rule_display = str(auto_rule.get("name") or "")
         self._layout_rule_display_var.set(rule_display)
 
         info_spec = ""
@@ -455,6 +470,10 @@ class ConvertTabMixin:
                 meta_spec = spec_path
             else:
                 info_spec = spec_path
+        if not info_spec:
+            info_spec = self._auto_selected_spec_path("info_spec") or ""
+        if not meta_spec:
+            meta_spec = self._auto_selected_spec_path("metadata_spec") or ""
         if not info_spec:
             info_spec = "Default"
         if not meta_spec:
@@ -480,10 +499,9 @@ class ConvertTabMixin:
             self._slicepack_suffix_var.set(self._current_slicepack_suffix())
             self._layout_source_var.set(self._auto_layout_source())
         else:
-            if self._layout_template_var.get() != "":
-                self._layout_template_manual = self._layout_template_var.get()
-            elif self._layout_template_manual:
-                self._layout_template_var.set(self._layout_template_manual)
+            if self._layout_template_manual:
+                if (self._layout_template_var.get() or "") != self._layout_template_manual:
+                    self._layout_template_var.set(self._layout_template_manual)
             self._slicepack_suffix_var.set(self._current_slicepack_suffix())
 
     def _current_layout_template_from_sources(self) -> str:

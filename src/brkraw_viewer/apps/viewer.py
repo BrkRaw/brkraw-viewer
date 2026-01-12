@@ -149,6 +149,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._addon_rule_file_map: Dict[str, str] = {}
         self._addon_rule_display_by_path: Dict[str, str] = {}
         self._addon_rule_session_files: List[str] = []
+        self._addon_rule_auto_var = tk.BooleanVar(value=True)
         self._addon_rule_category_var = tk.StringVar(value="None")
         self._addon_rule_desc_var = tk.StringVar(value="")
         self._addon_rule_status_var = tk.StringVar(value="skipped")
@@ -214,6 +215,18 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._layout_source_combo: Optional[ttk.Combobox] = None
         self._layout_auto_check: Optional[ttk.Checkbutton] = None
         self._addon_rule_file_combo: Optional[ttk.Combobox] = None
+        self._addon_rule_browse_button: Optional[ttk.Button] = None
+        self._addon_rule_new_button: Optional[ttk.Button] = None
+        self._addon_rule_file_combo: Optional[ttk.Combobox] = None
+        self._addon_rule_desc_tooltip: Optional[_Tooltip] = None
+        self._addon_transform_file_var = tk.StringVar(value="")
+        self._addon_transform_file_map: Dict[str, str] = {}
+        self._addon_transform_display_by_path: Dict[str, str] = {}
+        self._addon_transform_session_files: List[str] = []
+        self._addon_transform_combo: Optional[ttk.Combobox] = None
+        self._addon_transform_browse_button: Optional[ttk.Button] = None
+        self._addon_transform_new_button: Optional[ttk.Button] = None
+        self._addon_transform_edit_button: Optional[ttk.Button] = None
         self._addon_spec_name_entry: Optional[ttk.Entry] = None
         self._addon_spec_desc_tooltip: Optional[_Tooltip] = None
 
@@ -226,6 +239,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._registry_sort_ascending = True
 
         self._viewer_hooks = load_viewer_hooks()
+        self._layout_template_var.trace_add("write", lambda *_: self._on_layout_template_change())
         self._viewer_host: Optional[ttk.Frame] = None
         self._viewer_widget: Optional[Any] = None
         self._subject_window: Optional[tk.Toplevel] = None
@@ -235,7 +249,18 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._refresh_button: Optional[ttk.Button] = None
         self._addon_spec_browse_button: Optional[ttk.Button] = None
         self._addon_spec_new_button: Optional[ttk.Button] = None
+        self._addon_context_new_button: Optional[ttk.Button] = None
         self._params_tree: Optional[ttk.Treeview] = None
+        self._params_sort_key: Optional[str] = None
+        self._params_sort_ascending = True
+        self._params_results: list[tuple[str, str, Any]] = []
+        self._params_truncated = 0
+        self._params_column_titles = {
+            "file": "File",
+            "key": "Key",
+            "type": "Type",
+            "value": "Value",
+        }
         self._params_summary_vars: Dict[str, tk.StringVar] = {}
         self._params_summary_entries: Dict[str, ttk.Entry] = {}
         self._subject_summary_vars = {
@@ -983,19 +1008,32 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
     def _build_addon_tab(self, parent: tk.Misc) -> ttk.Frame:
         addon_tab = ttk.Frame(parent)
-        addon_tab.columnconfigure(0, weight=2)
-        addon_tab.columnconfigure(1, weight=3)
+        addon_tab.columnconfigure(0, weight=1)
+        addon_tab.columnconfigure(1, weight=1)
         addon_tab.rowconfigure(0, weight=1)
+        addon_tab.rowconfigure(1, weight=1)
 
-        left = ttk.Frame(addon_tab, padding=(6, 6))
-        left.grid(row=0, column=0, sticky="nsew")
-        left.columnconfigure(0, weight=1)
-        left.rowconfigure(0, weight=1)
+        top_left = ttk.Frame(addon_tab, padding=(6, 6))
+        top_left.grid(row=0, column=0, sticky="nsew")
+        top_left.columnconfigure(0, weight=1)
 
-        rule_frame = ttk.LabelFrame(left, text="Rule", padding=(8, 8))
-        rule_frame.grid(row=0, column=0, sticky="nsew")
+        top_right = ttk.Frame(addon_tab, padding=(6, 6))
+        top_right.grid(row=0, column=1, sticky="nsew")
+        top_right.columnconfigure(0, weight=1)
+        top_right.rowconfigure(0, weight=1)
+
+        bottom_left = ttk.Frame(addon_tab, padding=(6, 6))
+        bottom_left.grid(row=1, column=0, sticky="nsew")
+        bottom_left.columnconfigure(0, weight=1)
+
+        bottom_right = ttk.Frame(addon_tab, padding=(6, 6))
+        bottom_right.grid(row=1, column=1, sticky="nsew")
+        bottom_right.columnconfigure(0, weight=1)
+        bottom_right.rowconfigure(2, weight=1)
+
+        rule_frame = ttk.LabelFrame(top_left, text="Rule", padding=(8, 8))
+        rule_frame.grid(row=0, column=0, sticky="ew")
         rule_frame.columnconfigure(1, weight=1)
-        rule_frame.rowconfigure(3, weight=1)
 
         ttk.Label(rule_frame, text="file").grid(row=0, column=0, sticky="w")
         self._addon_rule_file_combo = ttk.Combobox(
@@ -1004,37 +1042,65 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             state="readonly",
             values=("None",),
         )
-        self._addon_rule_file_combo.grid(row=0, column=1, sticky="ew", padx=(8, 6))
+        self._addon_rule_file_combo.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 6))
         self._addon_rule_file_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_rule_file_selected())
-        ttk.Button(rule_frame, text="Browse", command=self._browse_rule_file).grid(row=0, column=2, sticky="e")
-        ttk.Button(rule_frame, text="New", command=self._new_rule_file).grid(row=0, column=3, sticky="e", padx=(6, 0))
+        self._addon_rule_browse_button = ttk.Button(rule_frame, text="Browse", command=self._browse_rule_file)
+        self._addon_rule_browse_button.grid(row=0, column=3, sticky="e")
+        self._addon_rule_new_button = ttk.Button(rule_frame, text="New", command=self._new_rule_file)
 
         ttk.Label(rule_frame, text="name").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        name_row = ttk.Frame(rule_frame)
+        name_row.grid(row=1, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(8, 0))
+        name_row.columnconfigure(0, weight=1)
         self._addon_rule_combo = ttk.Combobox(
-            rule_frame,
+            name_row,
             textvariable=self._rule_name_var,
             state="readonly",
             values=("None",),
         )
-        self._addon_rule_combo.grid(row=1, column=1, sticky="ew", padx=(8, 6), pady=(8, 0))
+        self._addon_rule_combo.grid(row=0, column=0, sticky="ew")
         self._addon_rule_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_rule_selected())
+        ttk.Checkbutton(
+            name_row,
+            text="Auto",
+            variable=self._addon_rule_auto_var,
+            command=self._on_rule_auto_toggle,
+        ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self._addon_rule_desc_tooltip = _Tooltip(self._addon_rule_combo, lambda: self._addon_rule_desc_var.get())
 
         ttk.Label(rule_frame, text="category").grid(row=2, column=0, sticky="w", pady=(8, 0))
         ttk.Entry(rule_frame, textvariable=self._addon_rule_category_var, state="readonly").grid(
-            row=2, column=1, sticky="ew", padx=(8, 6), pady=(8, 0)
+            row=2, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(8, 0)
         )
 
-        ttk.Label(rule_frame, text="description").grid(row=3, column=0, sticky="nw", pady=(8, 0))
-        self._addon_rule_desc_text = tk.Text(rule_frame, height=3, wrap="word")
-        self._addon_rule_desc_text.grid(row=3, column=1, columnspan=3, sticky="nsew", padx=(8, 0), pady=(8, 0))
-        self._addon_rule_desc_text.configure(state=tk.DISABLED)
+        ttk.Label(rule_frame, text="status").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(rule_frame, textvariable=self._addon_rule_status_var).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self._addon_rule_new_button.grid(row=3, column=2, sticky="e", padx=(0, 6), pady=(8, 0))
+        ttk.Button(rule_frame, text="Edit", command=self._edit_rule_file).grid(row=3, column=3, sticky="e", pady=(8, 0))
 
-        ttk.Label(rule_frame, text="status").grid(row=4, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(rule_frame, textvariable=self._addon_rule_status_var).grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-        ttk.Button(rule_frame, text="Edit", command=self._edit_rule_file).grid(row=4, column=3, sticky="e", pady=(8, 0))
+        transform_frame = ttk.LabelFrame(top_left, text="Transform", padding=(8, 8))
+        transform_frame.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        transform_frame.columnconfigure(1, weight=1)
 
-        spec_frame = ttk.LabelFrame(left, text="Spec", padding=(8, 8))
-        spec_frame.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        ttk.Label(transform_frame, text="file").grid(row=0, column=0, sticky="w")
+        self._addon_transform_combo = ttk.Combobox(
+            transform_frame,
+            textvariable=self._addon_transform_file_var,
+            state="readonly",
+            values=("None",),
+        )
+        self._addon_transform_combo.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 6))
+        self._addon_transform_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_transform_file_selected())
+        self._addon_transform_browse_button = ttk.Button(transform_frame, text="Browse", command=self._browse_transform_file)
+        self._addon_transform_browse_button.grid(row=0, column=3, sticky="e")
+        self._addon_transform_new_button = ttk.Button(transform_frame, text="New", command=self._new_transform_file)
+
+        self._addon_transform_edit_button = ttk.Button(transform_frame, text="Edit", command=self._edit_transform_file)
+        self._addon_transform_edit_button.grid(row=1, column=3, sticky="e", pady=(8, 0))
+        self._addon_transform_new_button.grid(row=1, column=2, sticky="e", padx=(0, 6), pady=(8, 0))
+
+        spec_frame = ttk.LabelFrame(bottom_left, text="Spec", padding=(8, 8))
+        spec_frame.grid(row=0, column=0, sticky="nsew")
         spec_frame.columnconfigure(1, weight=1)
 
         ttk.Checkbutton(
@@ -1051,67 +1117,64 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             state="readonly",
             values=("None",),
         )
-        self._addon_spec_combo.grid(row=1, column=1, sticky="ew", padx=(8, 6), pady=(8, 0))
+        self._addon_spec_combo.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 6), pady=(8, 0))
         self._addon_spec_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_spec_file_selected())
         self._addon_spec_browse_button = ttk.Button(spec_frame, text="Browse", command=self._browse_spec_file)
-        self._addon_spec_browse_button.grid(row=1, column=2, sticky="e", pady=(8, 0))
+        self._addon_spec_browse_button.grid(row=1, column=3, sticky="e", pady=(8, 0))
         self._addon_spec_new_button = ttk.Button(spec_frame, text="New", command=self._new_spec_file)
-        self._addon_spec_new_button.grid(row=1, column=3, sticky="e", padx=(6, 0), pady=(8, 0))
 
         ttk.Label(spec_frame, text="name").grid(row=2, column=0, sticky="w", pady=(8, 0))
         self._addon_spec_name_entry = ttk.Entry(spec_frame, textvariable=self._addon_spec_name_var, state="readonly")
-        self._addon_spec_name_entry.grid(row=2, column=1, sticky="ew", padx=(8, 6), pady=(8, 0))
+        self._addon_spec_name_entry.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(8, 0))
         self._addon_spec_desc_tooltip = _Tooltip(self._addon_spec_name_entry, lambda: self._addon_spec_desc_var.get())
 
         ttk.Label(spec_frame, text="status").grid(row=3, column=0, sticky="w", pady=(8, 0))
         ttk.Label(spec_frame, textvariable=self._addon_spec_status_var).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self._addon_spec_new_button.grid(row=3, column=2, sticky="e", padx=(0, 6), pady=(8, 0))
         ttk.Button(spec_frame, text="Edit", command=self._edit_spec_file).grid(row=3, column=3, sticky="e", pady=(8, 0))
 
         ttk.Button(spec_frame, text="Apply Spec", command=self._apply_selected_spec).grid(
             row=4, column=0, columnspan=4, sticky="ew", pady=(10, 0)
         )
 
-        map_frame = ttk.LabelFrame(left, text="Context Map", padding=(8, 8))
-        map_frame.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
+        map_frame = ttk.LabelFrame(bottom_right, text="Context Map", padding=(8, 8))
+        map_frame.grid(row=0, column=0, sticky="ew")
         map_frame.columnconfigure(1, weight=1)
 
         ttk.Label(map_frame, text="path").grid(row=0, column=0, sticky="w")
         ttk.Entry(map_frame, textvariable=self._addon_context_map_var, state="readonly").grid(
-            row=0, column=1, sticky="ew", padx=(8, 6)
+            row=0, column=1, columnspan=2, sticky="ew", padx=(8, 6)
         )
-        ttk.Button(map_frame, text="Open", command=self._browse_context_map).grid(row=0, column=2, sticky="e")
-        ttk.Button(map_frame, text="New", command=self._new_context_map).grid(row=0, column=3, sticky="e", padx=(6, 0))
+        ttk.Button(map_frame, text="Open", command=self._browse_context_map).grid(row=0, column=3, sticky="e")
+        self._addon_context_new_button = ttk.Button(map_frame, text="New", command=self._new_context_map)
 
         ttk.Label(map_frame, text="status").grid(row=1, column=0, sticky="w", pady=(8, 0))
         ttk.Label(map_frame, textvariable=self._addon_context_status_var).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
+        self._addon_context_new_button.grid(row=1, column=2, sticky="e", padx=(0, 6), pady=(8, 0))
         ttk.Button(map_frame, text="Edit", command=self._edit_context_map).grid(row=1, column=3, sticky="e", pady=(8, 0))
 
         ttk.Button(map_frame, text="Apply Context Map", command=self._apply_context_map).grid(
             row=2, column=0, columnspan=4, sticky="ew", pady=(10, 0)
         )
 
-        right = ttk.Frame(addon_tab, padding=(6, 6))
-        right.grid(row=0, column=1, sticky="nsew")
-        right.columnconfigure(0, weight=1)
-        right.rowconfigure(0, weight=1)
+        output_frame = ttk.LabelFrame(top_right, text="Output", padding=(8, 8))
+        output_frame.grid(row=0, column=0, sticky="nsew")
+        output_frame.columnconfigure(0, weight=1)
+        output_frame.rowconfigure(0, weight=1)
 
-        self._addon_notebook = ttk.Notebook(right)
-        self._addon_notebook.grid(row=0, column=0, sticky="nsew")
-        output_tab = ttk.Frame(self._addon_notebook)
-        output_tab.columnconfigure(0, weight=1)
-        output_tab.rowconfigure(0, weight=1)
-        self._addon_notebook.add(output_tab, text="Output")
-
-        self._info_output_text = tk.Text(output_tab, wrap="word")
+        self._info_output_text = tk.Text(output_frame, wrap="word")
         self._info_output_text.grid(row=0, column=0, sticky="nsew")
-        info_scroll = ttk.Scrollbar(output_tab, orient="vertical", command=self._info_output_text.yview)
+        info_scroll = ttk.Scrollbar(output_frame, orient="vertical", command=self._info_output_text.yview)
         info_scroll.grid(row=0, column=1, sticky="ns")
         self._info_output_text.configure(yscrollcommand=info_scroll.set)
         self._info_output_text.configure(state=tk.DISABLED)
-        output_actions = ttk.Frame(output_tab)
-        output_actions.grid(row=1, column=0, columnspan=2, sticky="e", pady=(6, 0))
+
+        output_actions = ttk.Frame(bottom_right)
+        output_actions.grid(row=1, column=0, sticky="e", pady=(10, 0))
         ttk.Button(output_actions, text="Reset", command=self._reset_addon_state).pack(side=tk.LEFT)
         ttk.Button(output_actions, text="Save As", command=self._save_addon_output).pack(side=tk.LEFT, padx=(8, 0))
+
+        ttk.Frame(bottom_right).grid(row=2, column=0, sticky="nsew")
 
         return addon_tab
 
@@ -1175,15 +1238,16 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         columns = ("file", "key", "type", "value")
         tree = ttk.Treeview(results_frame, columns=columns, show="headings")
         tree.grid(row=0, column=0, sticky="nsew")
-        tree.heading("file", text="File", anchor="w")
-        tree.heading("key", text="Key", anchor="w")
-        tree.heading("type", text="Type", anchor="center")
-        tree.heading("value", text="Value", anchor="w")
+        tree.heading("file", text="File", anchor="w", command=lambda: self._params_sort_by("file"))
+        tree.heading("key", text="Key", anchor="w", command=lambda: self._params_sort_by("key"))
+        tree.heading("type", text="Type", anchor="center", command=lambda: self._params_sort_by("type"))
+        tree.heading("value", text="Value", anchor="w", command=lambda: self._params_sort_by("value"))
         tree.column("file", width=110, anchor="w")
         tree.column("key", width=220, anchor="w")
         tree.column("type", width=90, anchor="center")
         tree.column("value", width=320, anchor="w")
         self._params_tree = tree
+        self._update_params_sort_heading()
 
         vscroll = ttk.Scrollbar(results_frame, orient="vertical", command=tree.yview)
         vscroll.grid(row=0, column=1, sticky="ns")
@@ -1915,6 +1979,8 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
     def _refresh_addon_controls(self) -> None:
         self._refresh_rule_files()
+        self._on_rule_auto_toggle()
+        self._refresh_transform_files()
         self._refresh_spec_choices()
         self._on_spec_auto_toggle()
         self._update_rule_details()
@@ -1964,12 +2030,13 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
         values = sorted(self._addon_rule_file_map.keys()) if self._addon_rule_file_map else ["None"]
         if self._addon_rule_file_combo is not None:
-            self._addon_rule_file_combo.configure(values=values, state="readonly" if self._addon_rule_file_map else "disabled")
+            self._addon_rule_file_combo.configure(values=values)
         current = (self._addon_rule_file_var.get() or "").strip()
         if current in ("", "None") and values:
             self._addon_rule_file_var.set(values[0])
         path = self._resolve_rule_file_selection(self._addon_rule_file_var.get())
         self._load_rule_file(path)
+        self._apply_rule_combo_state()
 
     def _resolve_rule_file_selection(self, selection: str) -> Optional[str]:
         if not selection or selection == "None":
@@ -1981,14 +2048,109 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return selection
         return None
 
+    def _refresh_transform_files(self) -> None:
+        self._addon_transform_file_map = {}
+        self._addon_transform_display_by_path = {}
+        try:
+            installed = addon_app.list_installed(root=resolve_root(None))
+        except Exception:
+            installed = {}
+        transforms = installed.get("transforms", []) if isinstance(installed, dict) else []
+        paths = config_core.paths(root=None)
+        seen_relpaths: set[str] = set()
+        for entry in transforms:
+            if not isinstance(entry, dict):
+                continue
+            relpath = entry.get("file")
+            if not relpath:
+                continue
+            if relpath in seen_relpaths:
+                continue
+            seen_relpaths.add(relpath)
+            basename = Path(relpath).name
+            display = basename
+            if display in self._addon_transform_file_map:
+                display = f"{basename} ({relpath})"
+            full_path = str((paths.transforms_dir / relpath).resolve())
+            if display in self._addon_transform_file_map and self._addon_transform_file_map[display] == full_path:
+                continue
+            self._addon_transform_file_map[display] = full_path
+            self._addon_transform_display_by_path[full_path] = display
+
+        for path in self._addon_transform_session_files:
+            if not path:
+                continue
+            if path in self._addon_transform_display_by_path:
+                continue
+            self._addon_transform_file_map[path] = path
+            self._addon_transform_display_by_path[path] = path
+
+        values = sorted(self._addon_transform_file_map.keys()) if self._addon_transform_file_map else ["None"]
+        if self._addon_transform_combo is not None:
+            self._addon_transform_combo.configure(values=values, state="readonly" if self._addon_transform_file_map else "disabled")
+        current = (self._addon_transform_file_var.get() or "").strip()
+        if current in ("", "None") and values:
+            self._addon_transform_file_var.set(values[0])
+
+    def _resolve_transform_file_selection(self, selection: str) -> Optional[str]:
+        if not selection or selection == "None":
+            return None
+        path = self._addon_transform_file_map.get(selection)
+        if path:
+            return path
+        if Path(selection).exists():
+            return selection
+        return None
+
+    def _on_transform_file_selected(self) -> None:
+        selection = self._addon_transform_file_var.get()
+        if selection and selection != "None":
+            self._addon_transform_file_var.set(selection)
+
+    def _browse_transform_file(self) -> None:
+        path = filedialog.askopenfilename(
+            title="Select transform file",
+            filetypes=(("Python", "*.py"), ("All files", "*.*")),
+        )
+        if not path:
+            return
+        if path not in self._addon_transform_session_files:
+            self._addon_transform_session_files.append(path)
+        self._refresh_transform_files()
+        self._addon_transform_file_var.set(path)
+
+    def _new_transform_file(self) -> None:
+        path = filedialog.asksaveasfilename(
+            title="Create new transform file",
+            defaultextension=".py",
+            filetypes=(("Python", "*.py"), ("All files", "*.*")),
+        )
+        if not path:
+            return
+        target = Path(path)
+        if not target.exists():
+            target.write_text("# Transform script\n", encoding="utf-8")
+        if path not in self._addon_transform_session_files:
+            self._addon_transform_session_files.append(path)
+        self._refresh_transform_files()
+        self._addon_transform_file_var.set(path)
+        self._open_text_editor(path=target, title="Edit transform")
+
+    def _edit_transform_file(self) -> None:
+        path = self._resolve_transform_file_selection(self._addon_transform_file_var.get())
+        if not path:
+            return
+        self._open_text_editor(path=Path(path), title="Edit transform")
+
     def _load_rule_file(self, path: Optional[str]) -> None:
         if not path:
             self._addon_rule_choices = {}
             self._rule_name_var.set("None")
-            self._addon_rule_combo.configure(values=("None",), state="disabled")
+            self._addon_rule_combo.configure(values=("None",))
             self._addon_rule_status_var.set("skipped")
             self._addon_rule_category_var.set("None")
             self._set_rule_description("")
+            self._apply_rule_combo_state()
             return
         try:
             data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
@@ -2017,16 +2179,14 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 choices[display] = rule
         self._addon_rule_choices = choices
         values = sorted(choices.keys()) if choices else ["None"]
-        self._addon_rule_combo.configure(values=values, state="readonly" if choices else "disabled")
+        self._addon_rule_combo.configure(values=values)
         if values:
             self._rule_name_var.set(values[0])
         self._update_rule_details()
+        self._apply_rule_combo_state()
 
     def _set_rule_description(self, text: str) -> None:
-        self._addon_rule_desc_text.configure(state=tk.NORMAL)
-        self._addon_rule_desc_text.delete("1.0", tk.END)
-        self._addon_rule_desc_text.insert(tk.END, text)
-        self._addon_rule_desc_text.configure(state=tk.DISABLED)
+        self._addon_rule_desc_var.set(text)
 
     def _update_rule_details(self) -> None:
         display = (self._rule_name_var.get() or "").strip()
@@ -2071,8 +2231,96 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._set_info_output(data)
 
     def _on_rule_selected(self) -> None:
+        if bool(self._addon_rule_auto_var.get()):
+            self._apply_auto_rule_selection()
+            return
         self._update_rule_details()
 
+    def _on_rule_auto_toggle(self) -> None:
+        auto = bool(self._addon_rule_auto_var.get())
+        if self._addon_rule_combo is not None:
+            try:
+                self._addon_rule_combo.state(["disabled"] if auto else ["!disabled"])
+            except Exception:
+                self._addon_rule_combo.configure(state="disabled" if auto else "readonly")
+        if self._addon_rule_file_combo is not None:
+            try:
+                self._addon_rule_file_combo.state(["disabled"] if auto else ["!disabled"])
+            except Exception:
+                self._addon_rule_file_combo.configure(state="disabled" if auto else "readonly")
+        for btn in (self._addon_rule_browse_button, self._addon_rule_new_button):
+            if btn is None:
+                continue
+            btn.configure(state=tk.DISABLED if auto else tk.NORMAL)
+        if auto:
+            self._apply_auto_rule_selection()
+        self._update_rule_details()
+        self._apply_rule_combo_state()
+
+    def _apply_auto_rule_selection(self) -> None:
+        rule = self._auto_applied_rule()
+        if rule is None:
+            self._addon_rule_file_var.set("None")
+            self._rule_name_var.set("None")
+            self._load_rule_file(None)
+            return
+        rule_name = str(rule.get("name") or "None")
+        category = str(rule.get("__category__", ""))
+        use = str(rule.get("use") or "")
+        match = self._find_rule_entry_file(rule_name, category, use)
+        if match:
+            file_path = match
+            display = self._addon_rule_display_by_path.get(file_path, file_path)
+            self._addon_rule_file_var.set(display)
+            self._load_rule_file(file_path)
+        else:
+            self._addon_rule_file_var.set("None")
+            self._load_rule_file(None)
+        if self._addon_rule_combo is not None:
+            if rule_name in self._addon_rule_combo["values"]:
+                self._rule_name_var.set(rule_name)
+            else:
+                self._rule_name_var.set(rule_name)
+
+    def _apply_rule_combo_state(self) -> None:
+        auto = bool(self._addon_rule_auto_var.get())
+        if self._addon_rule_file_combo is not None:
+            has_files = bool(self._addon_rule_file_map)
+            state = "disabled" if auto else ("readonly" if has_files else "disabled")
+            try:
+                self._addon_rule_file_combo.state(["disabled"] if state == "disabled" else ["!disabled"])
+            except Exception:
+                pass
+            self._addon_rule_file_combo.configure(state=state)
+        if self._addon_rule_combo is not None:
+            has_choices = bool(self._addon_rule_choices)
+            state = "disabled" if auto else ("readonly" if has_choices else "disabled")
+            try:
+                self._addon_rule_combo.state(["disabled"] if state == "disabled" else ["!disabled"])
+            except Exception:
+                pass
+            self._addon_rule_combo.configure(state=state)
+
+    def _find_rule_entry_file(self, name: str, category: str, use: str) -> Optional[str]:
+        try:
+            installed = addon_app.list_installed(root=resolve_root(None))
+        except Exception:
+            return None
+        rules = installed.get("rules", []) if isinstance(installed, dict) else []
+        paths = config_core.paths(root=None)
+        for entry in rules:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("name") != name:
+                continue
+            if category and entry.get("category") != category:
+                continue
+            if use and entry.get("use") != use:
+                continue
+            relpath = entry.get("file")
+            if relpath:
+                return str((paths.rules_dir / relpath).resolve())
+        return None
     def _on_rule_file_selected(self) -> None:
         path = self._resolve_rule_file_selection(self._addon_rule_file_var.get())
         self._load_rule_file(path)
@@ -2112,11 +2360,14 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
     def _on_spec_auto_toggle(self) -> None:
         if self._addon_spec_combo is not None:
-            state = "disabled" if self._addon_spec_auto_var.get() else "readonly"
             try:
-                self._addon_spec_combo.configure(state=state)
+                self._addon_spec_combo.state(["disabled"] if self._addon_spec_auto_var.get() else ["!disabled"])
             except Exception:
-                pass
+                state = "disabled" if self._addon_spec_auto_var.get() else "readonly"
+                try:
+                    self._addon_spec_combo.configure(state=state)
+                except Exception:
+                    pass
         for btn in (self._addon_spec_browse_button, self._addon_spec_new_button):
             if btn is None:
                 continue
@@ -2666,8 +2917,88 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 row=0, column=col, padx=(0, 6), sticky="e"
             )
 
+        if kind == "spec" and "transforms_source" in meta_fields:
+            field_type, widget = meta_fields["transforms_source"]
+            if field_type == "text" and isinstance(widget, tk.Text):
+                picker = ttk.Frame(meta_frame)
+                picker.grid(row=len(meta_fields), column=0, columnspan=2, sticky="ew", pady=(6, 0))
+                picker.columnconfigure(1, weight=1)
+                ttk.Label(picker, text="transform").grid(row=0, column=0, sticky="w")
+                transform_var = tk.StringVar(value="")
+                combo = ttk.Combobox(
+                    picker,
+                    textvariable=transform_var,
+                    state="readonly",
+                    values=self._installed_transform_choices(),
+                )
+                combo.grid(row=0, column=1, sticky="ew", padx=(8, 6))
+
+                def _add_transform(value: str) -> None:
+                    self._append_transform_source(widget, value)
+
+                def _browse_transform() -> None:
+                    choice = self._browse_transform_source(base_dir=path.parent)
+                    if choice:
+                        _add_transform(choice)
+
+                ttk.Button(picker, text="Add", command=lambda: _add_transform(transform_var.get())).grid(
+                    row=0, column=2, sticky="e"
+                )
+                ttk.Button(picker, text="Browse", command=_browse_transform).grid(row=0, column=3, sticky="e")
+
         _load_editor()
         _render_snippets()
+
+    def _open_text_editor(self, *, path: Path, title: str) -> None:
+        window = tk.Toplevel(self)
+        window.title(title)
+        window.geometry("900x700")
+        window.minsize(720, 520)
+
+        container = ttk.Frame(window, padding=(10, 10))
+        container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(container)
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Button(header, text="Update", command=lambda: _save_editor(path)).grid(row=0, column=1, sticky="e")
+        ttk.Button(header, text="Save As", command=lambda: _save_as_editor()).grid(
+            row=0, column=2, sticky="e", padx=(6, 0)
+        )
+
+        body_text = tk.Text(container, wrap="none")
+        body_text.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        body_scroll = ttk.Scrollbar(container, orient="vertical", command=body_text.yview)
+        body_scroll.grid(row=1, column=1, sticky="ns", pady=(10, 0))
+        body_text.configure(yscrollcommand=body_scroll.set)
+
+        def _load_editor() -> None:
+            if path.exists():
+                body_text.delete("1.0", tk.END)
+                body_text.insert(tk.END, path.read_text(encoding="utf-8"))
+
+        def _save_editor(target: Path) -> None:
+            try:
+                target.write_text(body_text.get("1.0", tk.END), encoding="utf-8")
+            except Exception as exc:
+                messagebox.showerror("Editor", f"Failed to save:\n{exc}")
+                return
+            messagebox.showinfo("Editor", f"Saved:\n{target}")
+            self._refresh_transform_files()
+
+        def _save_as_editor() -> None:
+            target = filedialog.asksaveasfilename(
+                title="Save As",
+                defaultextension=path.suffix or ".py",
+                filetypes=(("Python", "*.py"), ("All files", "*.*")),
+            )
+            if not target:
+                return
+            _save_editor(Path(target))
+
+        _load_editor()
 
     def _build_meta_form(self, parent: tk.Widget, *, kind: str) -> Dict[str, Tuple[str, tk.Widget]]:
         fields = self._meta_fields_for_kind(kind)
@@ -2767,6 +3098,59 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
     def _snippets_dir(self, kind: str) -> Path:
         root = resolve_root(None)
         return root / "viewer" / "snippets" / kind
+
+    def _installed_transform_choices(self) -> list[str]:
+        try:
+            installed = addon_app.list_installed(root=resolve_root(None))
+        except Exception:
+            installed = {}
+        transforms = installed.get("transforms", []) if isinstance(installed, dict) else []
+        choices: list[str] = []
+        for entry in transforms:
+            if not isinstance(entry, dict):
+                continue
+            relpath = entry.get("file")
+            if relpath:
+                choices.append(relpath)
+        return choices or ["None"]
+
+    def _browse_transform_source(self, *, base_dir: Path) -> Optional[str]:
+        path = filedialog.askopenfilename(
+            title="Select transform file",
+            initialdir=str(base_dir),
+            filetypes=(("Python", "*.py"), ("All files", "*.*")),
+        )
+        if not path:
+            return None
+        return self._normalize_transform_source(Path(path))
+
+    def _normalize_transform_source(self, path: Path) -> str:
+        transforms_dir = config_core.paths(root=None).transforms_dir
+        try:
+            return str(path.resolve().relative_to(transforms_dir))
+        except Exception:
+            return path.name
+
+    def _append_transform_source(self, widget: tk.Text, value: str) -> None:
+        if not value or value == "None":
+            return
+        raw = widget.get("1.0", tk.END).strip()
+        if not raw:
+            data: Any = value
+        else:
+            try:
+                data = yaml.safe_load(raw)
+            except Exception:
+                data = raw
+            if isinstance(data, list):
+                if value not in data:
+                    data.append(value)
+            elif isinstance(data, str):
+                data = [data, value] if data != value else data
+            else:
+                data = [value]
+        widget.delete("1.0", tk.END)
+        widget.insert(tk.END, self._format_yaml(data))
 
     def _load_snippets(self, kind: str) -> Dict[str, str]:
         snippets: Dict[str, str] = dict(self._load_default_snippets(kind))
@@ -3047,16 +3431,73 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         *,
         truncated: int = 0,
     ) -> None:
+        self._params_results = list(matches)
+        self._params_truncated = truncated
+        self._render_param_results_from_cache()
+
+    def _render_param_results_from_cache(self) -> None:
         tree = getattr(self, "_params_tree", None)
         if tree is None:
             return
         tree.delete(*tree.get_children())
+        matches = list(self._params_results)
+        sort_key = self._params_sort_key
+        if sort_key:
+            matches = sorted(
+                matches,
+                key=lambda item: self._params_sort_value(item, sort_key),
+                reverse=not self._params_sort_ascending,
+            )
         for src, path, value in matches:
             value_text = self._format_value(value)
             type_name = type(value).__name__
             tree.insert("", tk.END, values=(src, path, type_name, value_text))
-        if truncated:
-            tree.insert("", tk.END, values=("", "", "", f"... {truncated} more result(s)"))
+        if self._params_truncated:
+            tree.insert("", tk.END, values=("", "", "", f"... {self._params_truncated} more result(s)"))
+
+    def _params_sort_by(self, key: str) -> None:
+        if key == self._params_sort_key:
+            self._params_sort_ascending = not self._params_sort_ascending
+        else:
+            self._params_sort_key = key
+            self._params_sort_ascending = True
+        self._update_params_sort_heading()
+        self._render_param_results_from_cache()
+
+    def _update_params_sort_heading(self) -> None:
+        tree = getattr(self, "_params_tree", None)
+        if tree is None:
+            return
+        for key, title in self._params_column_titles.items():
+            label = title
+            if key == self._params_sort_key:
+                arrow = "▲" if self._params_sort_ascending else "▼"
+                label = f"{title} {arrow}"
+            tree.heading(key, text=label)
+
+    def _params_sort_value(self, item: tuple[str, str, Any], key: str) -> Tuple[int, Any]:
+        src, path, value = item
+        if key == "file":
+            return self._params_sort_scalar(src)
+        if key == "key":
+            return self._params_sort_scalar(path)
+        if key == "type":
+            return self._params_sort_scalar(type(value).__name__)
+        if key == "value":
+            return self._params_sort_scalar(self._format_value(value))
+        return self._params_sort_scalar("")
+
+    @staticmethod
+    def _params_sort_scalar(value: Any) -> Tuple[int, float, str]:
+        if value is None:
+            return (2, 0.0, "")
+        if isinstance(value, (int, float)):
+            return (0, float(value), "")
+        text = str(value)
+        try:
+            return (0, float(text), text.casefold())
+        except Exception:
+            return (1, 0.0, text.casefold())
 
     def _update_params_summary(self) -> None:
         if self._scan is None:
@@ -3132,6 +3573,33 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._set_info_output("No scan selected.")
         else:
             self._set_info_output(self._info_full or {})
+
+    def _auto_applied_rule(self) -> Optional[Dict[str, Any]]:
+        if self._scan is None:
+            return None
+        try:
+            from brkraw.specs.rules.logic import rule_matches
+        except Exception:
+            return None
+        try:
+            rules = load_rules(root=resolve_root(None), validate=False)
+        except Exception:
+            return None
+        base = resolve_root(None)
+        for category in ("info_spec", "metadata_spec", "converter_hook"):
+            selected = None
+            for rule in rules.get(category, []):
+                if not isinstance(rule, dict):
+                    continue
+                try:
+                    matched = rule_matches(self._scan, rule, base=base)
+                except Exception:
+                    continue
+                if matched:
+                    selected = rule
+            if selected is not None:
+                return selected
+        return None
 
     def _browse_output_dir(self) -> None:
         super()._browse_output_dir()
