@@ -1,4 +1,0 @@
-Protocol:
-  type: mapping
-  values:
-    "<Protocol>": "<Mapped>"
