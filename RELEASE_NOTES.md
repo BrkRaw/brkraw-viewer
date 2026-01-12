@@ -1,9 +1,30 @@
-# Release v0.2.0
+# Release v0.2.1
 
-Date: 2026-01-08
-Changes
+Date: 2026-01-12
+Changes since 0.2.0
 
-- Refactor viewer UI and tooling (a4cbfcc)
-- Enhance viewer UI and tooling (250febb)
-- Remove build artifacts and add gitignore (9493955)
-- Add brkraw viewer plugin (5601dfd)
+- Update docs deploy and mkdocs deps (69467b6)
+- Document release flow and update contributors (b86897d)
+- Add PR-based release automation (8b261c1)
+- Use English cache prompt (1d912dd)
+- Add viewer hook toggle for converter hooks (fc6a020)
+- Add viewer cache config and LRU reuse (907ec66)
+- Add theme-aware logos for docs and README (c602898)
+- Fix viewer.py typing for snippets and renderer (91484ea)
+- Use JetBrains Mono in logo (a46509d)
+- feat(viewer): refine addon layout and params sorting (92ed319)
+- docs: update viewer docs and branding (25bd610)
+- refactor(viewer): reorganize modules and update workflows (e430ff1)
+- viewer: remove Convert panel title (88e2523)
+- viewer: reload on affine flip toggle (2bc20e5)
+- viewer: add affine flip checkboxes (c6c5448)
+- viewer: fix _planned_output_paths override signature (865a7f2)
+- viewer: use +/- buttons for key insertion (d73d463)
+- viewer: Counter placeholder + deduped saves (0099f6d)
+- viewer: only show scalar layout keys (83e60d0)
+- viewer: simplify console opening output (634fccb)
+- viewer: error on missing path (3672bb1)
+- viewer: stdout spinner, logging, app name (130bc52)
+- viewer: yaml info, key list tweaks, config backup (5f3a501)
+- Remove axis/slice CLI and unused timecourse (9ad7926)
+- Fix publish workflow version check (6c26174)
