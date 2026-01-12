@@ -26,6 +26,7 @@ from brkraw.apps.loader import info as info_resolver
 from brkraw.core import config as config_core
 from brkraw.core import layout as layout_core
 from brkraw.core.config import resolve_root
+from brkraw.specs import hook as converter_core
 from brkraw.specs.rules import load_rules, select_rule_use
 from brkraw.apps import addon as addon_app
 from ..utils.orientation import reorient_to_ras
@@ -157,6 +158,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._view_error: Optional[str] = None
         self._extra_dim_vars: list[tk.IntVar] = []
         self._extra_dim_scales: list[tk.Scale] = []
+        self._viewer_hook_enabled_var = tk.BooleanVar(value=False)
+        self._viewer_hook_name_var = tk.StringVar(value="")
+        self._viewer_hook_frame: Optional[ttk.Frame] = None
 
         self._path_var = tk.StringVar(value=path or "")
         self._x_var = tk.IntVar(value=0)
@@ -177,6 +181,8 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._frame_inner: Optional[ttk.Frame] = None
         self._frame_label: Optional[ttk.Label] = None
         self._slicepack_box: Optional[ttk.Frame] = None
+        self._viewer_hook_check: Optional[ttk.Checkbutton] = None
+        self._viewer_hook_label: Optional[ttk.Label] = None
         self._view_crop_origins: Dict[str, Tuple[int, int]] = {"xy": (0, 0), "xz": (0, 0), "zy": (0, 0)}
 
         self._subject_type_var = tk.StringVar(value="Biped")
@@ -1038,6 +1044,19 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         bottom_bar = ttk.Frame(preview_frame)
         bottom_bar.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         bottom_bar.columnconfigure(0, weight=1)
+        hook_box = ttk.Frame(bottom_bar)
+        hook_box.grid(row=0, column=0, sticky="w")
+        self._viewer_hook_frame = hook_box
+        self._viewer_hook_check = ttk.Checkbutton(
+            hook_box,
+            text="Hook",
+            variable=self._viewer_hook_enabled_var,
+            command=self._on_viewer_hook_toggle,
+        )
+        self._viewer_hook_check.pack(side=tk.LEFT, padx=(0, 6))
+        self._viewer_hook_label = ttk.Label(hook_box, textvariable=self._viewer_hook_name_var)
+        self._viewer_hook_label.pack(side=tk.LEFT)
+        hook_box.grid_remove()
         slicepack_box = ttk.Frame(bottom_bar)
         slicepack_box.grid(row=0, column=1, sticky="e")
         self._slicepack_box = slicepack_box
@@ -1761,6 +1780,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._set_dataset_controls_enabled(False)
             return
         logger.debug("Loaded dataset with %d scan(s).", len(self._scan_ids))
+        self._detach_converter_hooks()
 
         self._set_viewer_tab_state(True)
         self._set_dataset_controls_enabled(True)
@@ -1847,6 +1867,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if self._study is None:
             return
         self._scan = self._study.avail.get(scan_id)
+        self._update_viewer_hook_controls()
         self._refresh_addon_controls()
         self._populate_reco_list(scan_id)
         self._update_params_summary()
@@ -4246,6 +4267,85 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._res = None
         self._slicepack_data = None
         self._slicepack_affines = None
+
+    def _clear_scan_cache(self, scan_id: int) -> None:
+        keys = [key for key in self._data_cache.keys() if key[0] == scan_id]
+        for key in keys:
+            self._data_cache.pop(key, None)
+        current_scan_id = getattr(self._scan, "scan_id", None)
+        if current_scan_id == scan_id:
+            self._data = None
+            self._affine = None
+            self._res = None
+            self._slicepack_data = None
+            self._slicepack_affines = None
+
+    def _detach_converter_hooks(self) -> None:
+        if self._loader is None or self._study is None:
+            return
+        for scan_id, scan in self._study.avail.items():
+            if getattr(scan, "_converter_hook", None) is None:
+                continue
+            try:
+                self._loader.restore_converter(scan_id)
+            except Exception as exc:
+                logger.debug("Failed to restore converter for scan %s: %s", scan_id, exc, exc_info=True)
+
+    def _update_viewer_hook_controls(self) -> None:
+        hook_frame = self._viewer_hook_frame
+        if hook_frame is None:
+            return
+        scan = self._scan
+        if scan is None:
+            self._viewer_hook_enabled_var.set(False)
+            hook_frame.grid_remove()
+            return
+        hook_name = getattr(scan, "_converter_hook_name", None)
+        if not isinstance(hook_name, str) or not hook_name.strip():
+            self._viewer_hook_enabled_var.set(False)
+            hook_frame.grid_remove()
+            return
+        self._viewer_hook_name_var.set(hook_name)
+        attached = getattr(scan, "_converter_hook", None) is not None
+        self._viewer_hook_enabled_var.set(attached)
+        hook_frame.grid()
+
+    def _on_viewer_hook_toggle(self) -> None:
+        scan = self._scan
+        if self._loader is None or scan is None:
+            return
+        scan_id = getattr(scan, "scan_id", None)
+        if scan_id is None:
+            return
+        hook_name = getattr(scan, "_converter_hook_name", None)
+        if not isinstance(hook_name, str) or not hook_name.strip():
+            self._viewer_hook_enabled_var.set(False)
+            return
+
+        if self._viewer_hook_enabled_var.get():
+            try:
+                entry = converter_core.resolve_hook(hook_name)
+            except Exception as exc:
+                self._viewer_hook_enabled_var.set(False)
+                logger.warning("Viewer hook %r resolve failed: %s", hook_name, exc)
+                return
+            try:
+                self._loader.override_converter(scan_id, entry)
+            except Exception as exc:
+                self._viewer_hook_enabled_var.set(False)
+                logger.warning("Viewer hook %r attach failed: %s", hook_name, exc)
+                return
+        else:
+            try:
+                self._loader.restore_converter(scan_id)
+            except Exception as exc:
+                self._viewer_hook_enabled_var.set(True)
+                logger.warning("Viewer hook %r detach failed: %s", hook_name, exc)
+                return
+
+        self._clear_scan_cache(scan_id)
+        self._mark_viewer_dirty()
+        self._maybe_load_viewer()
 
     def _on_close(self) -> None:
         if self._cache_enabled and self._cache_prompt_on_close and self._data_cache:
