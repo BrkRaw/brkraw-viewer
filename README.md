@@ -1,4 +1,4 @@
-# BrkRaw Viewer
+# ![BrkRaw Viewer](docs/assets/brkraw-viewer-logo.svg)
 
 BrkRaw Viewer is an interactive dataset viewer implemented as a
 separate CLI plugin for the `brkraw` command.
@@ -32,6 +32,22 @@ Typical use cases include:
 
 All data conversion and reproducible workflows are handled by the
 BrkRaw CLI and Python API.
+
+---
+
+## Why these features exist
+
+**Viewer**
+The Viewer tab makes it easy to confirm the right scan and orientation before
+running a larger workflow.
+
+**Registry**
+The Registry reduces repeated filesystem navigation and lets you re-open the
+current session with a single menu action.
+
+**Extensions/hooks**
+Extensions allow modality-specific panels (MRS, BIDS, etc.) to live outside the
+core viewer so the default install stays lightweight.
 
 ---
 
@@ -126,7 +142,8 @@ Recent updates:
 
 - Open folders or archives (`.zip` / `.PvDatasets`)
 - Viewer: `Space` (`raw/scanner/subject_ras`), nibabel RAS display, click-to-set `X/Y/Z`, optional crosshair + zoom, slicepack/frame sliders only when needed
-- Info: rule + spec selection (installed or file override), parameter search, lazy Viewer refresh on tab focus
+- Info: rule + spec selection (installed or file), parameter search, lazy Viewer refresh on tab focus
+- Registry: add the current session from the `+` menu when a dataset is loaded
 - Convert: BrkRaw layout engine, template + suffix defaults from `~/.brkraw/config.yaml`, keys browser (click to add), optional config `layout_entries`
 - Config: edit `~/.brkraw/config.yaml` in-app; basic focus/icon UX
 

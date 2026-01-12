@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 55" role="img" aria-label="brkraw viewer logo">
+  <rect width="430" height="55" fill="none"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="48" fill="currentColor">
+    <text x="10" y="45">brkraw </text>
+  </g>
+  <g transform="translate(183 5)">
+    <!-- <ellipse cx="24" cy="24" rx="14" ry="22" fill="#1b1b1b"/>
+    <ellipse cx="50" cy="24" rx="14" ry="22" fill="#1b1b1b"/> -->
+    <ellipse cx="24" cy="24" rx="12" ry="18" fill="#f5f1e6" stroke="#1b1b1b" stroke-width="2"/>
+    <ellipse cx="50" cy="24" rx="12" ry="18" fill="#f5f1e6" stroke="#1b1b1b" stroke-width="2"/>
+    <circle cx="24" cy="24" r="6" fill="#1b1b1b">
+      <animate attributeName="cx" values="24;22;26;24" dur="6s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="24;20;26;24" dur="6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="50" cy="24" r="6" fill="#1b1b1b">
+      <animate attributeName="cx" values="50;48;52;50" dur="6s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="24;20;26;24" dur="6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="26" cy="20" r="2" fill="#ffffff" stroke="none">
+      <animate attributeName="cx" values="26;24;28;26" dur="6s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="20;16;22;20" dur="6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="52" cy="20" r="2" fill="#ffffff" stroke="none">
+      <animate attributeName="cx" values="52;50;54;52" dur="6s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="20;16;22;20" dur="6s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="48" fill="currentColor">
+    <text x="250" y="45">viewer</text>
+  </g>
+</svg>

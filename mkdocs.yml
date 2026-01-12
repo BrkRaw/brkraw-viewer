@@ -1,0 +1,27 @@
+site_name: BrkRaw Viewer
+site_url: https://brkraw.github.io/brkraw-viewer
+repo_url: https://github.com/brkraw/brkraw-viewer
+repo_name: brkraw/brkraw-viewer
+theme:
+  name: material
+  logo: assets/brkraw-viewer-logo.svg
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - content.code.copy
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - User Guide:
+      - Viewer: user/viewer.md
+      - Info: user/info.md
+      - Convert: user/convert.md
+      - Config: user/config.md
+  - Extensions:
+      - Overview: extensions/index.md
+  - Developer Guide:
+      - Viewer Hooks: dev/hooks.md
+      - GUI Best Practices: dev/gui.md
