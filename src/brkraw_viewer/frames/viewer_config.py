@@ -24,6 +24,11 @@ def _default_registry_columns() -> List[Dict[str, Any]]:
 
 def default_viewer_config() -> Dict[str, Any]:
     return {
+        "cache": {
+            "enabled": True,
+            "max_items": 10,
+            "prompt_on_close": True,
+        },
         "registry": {
             "path": "viewer/registry.jsonl",
             "columns": _default_registry_columns(),

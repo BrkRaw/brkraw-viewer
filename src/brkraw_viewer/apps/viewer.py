@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
@@ -135,6 +136,22 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._current_reco_id: Optional[int] = None
         self._slicepack_data: Optional[Tuple[np.ndarray, ...]] = None
         self._slicepack_affines: Optional[Tuple[np.ndarray, ...]] = None
+        self._data_cache: "OrderedDict[Tuple[int, int], Any]" = OrderedDict()
+        viewer_cfg = load_viewer_config()
+        cache_cfg = viewer_cfg.get("cache", {}) if isinstance(viewer_cfg, dict) else {}
+        self._cache_enabled = bool(cache_cfg.get("enabled", True))
+        self._cache_prompt_on_close = bool(cache_cfg.get("prompt_on_close", True))
+        max_items_raw = cache_cfg.get("max_items", None)
+        if isinstance(max_items_raw, bool):
+            self._cache_max_items = None
+        elif isinstance(max_items_raw, (int, float)):
+            self._cache_max_items = int(max_items_raw)
+        elif isinstance(max_items_raw, str) and max_items_raw.strip().isdigit():
+            self._cache_max_items = int(max_items_raw.strip())
+        else:
+            self._cache_max_items = None
+        if self._cache_max_items is not None and self._cache_max_items < 0:
+            self._cache_max_items = None
         self._current_subject_type: Optional[str] = None
         self._current_subject_pose: Optional[str] = None
         self._view_error: Optional[str] = None
@@ -307,6 +324,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
         self._init_ui()
         self._apply_window_presentation()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         if path:
             self._status_var.set("Opening…")
@@ -1709,6 +1727,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         scan_id: Optional[int],
         reco_id: Optional[int],
     ) -> None:
+        self._clear_data_cache()
         self._loader = None
         self._study = None
         candidate_paths = self._candidate_load_paths(path)
@@ -4151,7 +4170,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if self._scan is None:
             return
         try:
-            dataobj = self._scan.get_dataobj(reco_id=reco_id)
+            dataobj = self._get_cached_dataobj(reco_id)
             affine = self._resolve_affine_for_space(reco_id=reco_id)
         except Exception as exc:
             self._view_error = f"Failed to load data:\n{exc}"
@@ -4192,6 +4211,52 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
         self._render_data_and_affine(np.asarray(dataobj), np.asarray(affines[0]))
         self._update_slicepack_visibility(1)
+
+    def _get_cached_dataobj(self, reco_id: int) -> Any:
+        scan = self._scan
+        if scan is None:
+            return None
+        if not self._cache_enabled or self._cache_max_items == 0:
+            return scan.get_dataobj(reco_id=reco_id)
+        key = self._cache_key(reco_id)
+        if key is not None and key in self._data_cache:
+            self._data_cache.move_to_end(key)
+            return self._data_cache[key]
+        dataobj = scan.get_dataobj(reco_id=reco_id)
+        if key is not None:
+            self._data_cache[key] = dataobj
+            self._data_cache.move_to_end(key)
+            if self._cache_max_items is not None:
+                while len(self._data_cache) > self._cache_max_items:
+                    self._data_cache.popitem(last=False)
+        return dataobj
+
+    def _cache_key(self, reco_id: int) -> Optional[Tuple[int, int]]:
+        if self._scan is None:
+            return None
+        scan_id = getattr(self._scan, "scan_id", None)
+        if scan_id is None:
+            return None
+        return (int(scan_id), int(reco_id))
+
+    def _clear_data_cache(self) -> None:
+        self._data_cache.clear()
+        self._data = None
+        self._affine = None
+        self._res = None
+        self._slicepack_data = None
+        self._slicepack_affines = None
+
+    def _on_close(self) -> None:
+        if self._cache_enabled and self._cache_prompt_on_close and self._data_cache:
+            try:
+                from tkinter import messagebox
+
+                if messagebox.askyesno("BrkRaw Viewer", "Cache를 삭제하시겠습니까?"):
+                    self._clear_data_cache()
+            except Exception:
+                pass
+        self.destroy()
 
     def _apply_slicepack(self, index: int) -> None:
         if self._slicepack_data is None or self._slicepack_affines is None:
