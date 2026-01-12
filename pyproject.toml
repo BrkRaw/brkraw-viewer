@@ -9,7 +9,7 @@ description = "BrkRaw scan viewer plugin for brkraw CLI."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-  "brkraw>=0.5.0b1",
+  "brkraw>=0.5.0rc1",
   "nibabel>=5.0",
   "pillow>=10.0",
 ]
@@ -23,6 +23,11 @@ classifiers = [
 
 [project.entry-points."brkraw.cli"]
 viewer = "brkraw_viewer.plugin:register"
+
+[project.optional-dependencies]
+docs = [
+  "mkdocs-material>=9.5.0",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

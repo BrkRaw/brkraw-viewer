@@ -3249,7 +3249,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return {}
         snippets: Dict[str, str] = {}
         try:
-            base = resources.files("brkraw_viewer").joinpath("snippets", kind)
+            base = resources.files("brkraw_viewer").joinpath("snippets").joinpath(kind)
         except Exception:
             return {}
         if not base.is_dir():
