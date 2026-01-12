@@ -4,8 +4,10 @@ Extensions exist so the default viewer can stay lightweight while specialized
 workflows (MRS, BIDS, etc.) live in their own packages. This keeps the GUI
 small for scanner environments but still lets teams build richer interfaces.
 
-BrkRaw Viewer supports optional extensions via Python entry points. Extensions
-can add a tab and dataset-specific UI.
+BrkRaw Viewer supports optional extensions via the `brkraw.viewer.hook` entry
+point. Extensions can add a tab and dataset-specific UI, and they can work
+alongside converter hooks or CLI hooks because they share the same rule/spec
+system.
 
 ## Installing extensions
 

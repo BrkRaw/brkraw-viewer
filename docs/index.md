@@ -13,7 +13,7 @@ repeatable workflows to the brkraw CLI and extension ecosystem.
 - Inspect scan metadata and parameter tables
 - Preview image volumes with orientation controls
 - Convert datasets with configurable naming/layout
-- Optional extensions via entry points (no core edits required)
+- Optional extensions via `brkraw.viewer.hook` entry points (no core edits required)
 
 ## Why these features exist
 
@@ -26,9 +26,10 @@ The Registry exists to reduce repetitive filesystem navigation. It stores
 datasets you care about and lets you reload the current session in one click.
 
 **Extensions/hooks**
-Extensions allow modality-specific UI (MRS, BIDS, etc.) without inflating the
-default dependency set. Hooks share the same rule/spec system as brkraw so the
-viewer stays aligned with core workflows.
+Extensions are delivered as viewer hooks discovered via the
+`brkraw.viewer.hook` entry point. Hooks can add new tabs and dataset callbacks
+without changing the core viewer, and they coexist with converter hooks and
+CLI hooks so UI features can build on the same rule/spec system as brkraw.
 
 ## Getting started
 
@@ -38,5 +39,5 @@ Install the package and run:
 brkraw viewer
 ```
 
-The main tabs are Viewer, Info, Convert, and Config. Extensions are available
-under the Extensions tab and are selected manually.
+The main tabs are Viewer, Addon, Params, Convert, and Config. Viewer hooks
+appear under the Extensions tab and are selected manually.

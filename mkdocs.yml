@@ -19,7 +19,7 @@ nav:
   - Home: index.md
   - User Guide:
       - Viewer: user/viewer.md
-      - Info: user/info.md
+      - Addon & Params: user/addon-params.md
       - Convert: user/convert.md
       - Config: user/config.md
   - Extensions:
@@ -27,3 +27,4 @@ nav:
   - Developer Guide:
       - Viewer Hooks: dev/hooks.md
       - GUI Best Practices: dev/gui.md
+      - Contributors: dev/contributors.md

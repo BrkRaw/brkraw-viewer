@@ -12,10 +12,6 @@ The viewer is intentionally maintained outside the BrkRaw core to
 enable independent development and community contributions around
 user-facing interfaces.
 
-A redesigned interface is planned. The current implementation
-started from functionality in earlier BrkRaw versions and is
-now evolving into a more complete, extensible viewer.
-
 ---
 
 ## Scope and intent
@@ -58,18 +54,13 @@ core viewer so the default install stays lightweight.
 
 ## Design goal: shared extensibility
 
-The primary goal of brkraw-viewer is to **share and reuse the full
-extensibility model of the BrkRaw core**.
-
-The viewer is designed to work with the same rules, specs, layouts,
-and converter hooks used by the BrkRaw CLI and Python API. Newly
-installed hooks should become naturally available to the viewer
-without additional glue code.
-
-This includes support for modality-specific hooks, such as
-MRS-related extensions, where modality-aware viewers can be built
-by consuming metadata and outputs already provided by the core
-extension system.
+brkraw-viewer keeps the BrkRaw design philosophy: extend the ecosystem
+without changing core logic. The viewer uses the same rules/spec/layout
+system as the CLI and Python API, and it exposes UI extensions via the
+`brkraw.viewer.hook` entry point so new tabs can be added with standalone
+packages. Viewer hooks can coexist with converter hooks and CLI hooks,
+so modality-specific logic can flow from conversion into UI without
+patching the viewer itself.
 
 ---
 
@@ -87,22 +78,14 @@ install.
 
 ---
 
-## Viewer extension ideas
+## Viewer hooks
 
-In addition to sharing BrkRaw core extensibility, we are exploring a
-viewer-focused extension model for user interfaces.
-
-Possible directions include:
-
-- A "viewer plugin" registry that discovers optional UI modules
-  (e.g. modality panels such as an MRS viewer)
-- A small set of stable UI contracts (panels, renderers, inspectors)
-  that can be extended without changing the core viewer
-- Hook-aware UI components that activate automatically when relevant
-  converter hooks are installed
-
-The goal is to keep the default viewer minimal while still enabling
-richer interfaces through optional extensions.
+Viewer extensions are implemented as hooks discovered through
+`brkraw.viewer.hook`. Each hook can register a new tab and provide
+dataset callbacks, enabling feature panels to live outside the core
+viewer while staying compatible with BrkRaw rules, specs, and converter
+hooks. See `docs/dev/hooks.md` for the hook interface and entry point
+setup.
 
 ---
 
@@ -131,16 +114,6 @@ archives using `Load` (folder or archive file).
 
 ---
 
-## Project status
-
-- Interface redesign: planned
-- Current viewer: expanding feature set
-- Default UI target: tkinter with minimal dependencies
-- Extension model: shared with BrkRaw core
-- Contribution model: open and experimental
-
----
-
 ## Update
 
 Recent updates:
@@ -159,19 +132,13 @@ the core BrkRaw rule/spec/hook system.
 
 ## Contributing
 
-This repository is intentionally published as an evolving prototype.
-
 We welcome contributions related to:
 
-- Lightweight graphical or interactive interfaces
-- tkinter UI improvements and scanner-console friendly workflows
-- Researcher-focused everyday features (triage, metadata checks, QC)
-- Visualization of BrkRaw rules, specs, and layout behavior
-- Interactive inspection of metadata produced by converter hooks
-- Modality-specific viewers built on shared hooks (e.g. MRS viewers)
-- fMRI-oriented visualization and preprocessing helpers
-- BIDS-oriented dataset browsing and validation helpers
-- Handling and browsing multiple datasets in a single session
+- New viewer hooks that add modality-specific panels or workflows
+- Alternative UI implementations delivered as separate CLI extensions
+- fMRI/MRS/BIDS-focused visualization or QC helpers built on hooks
+- Multi-dataset session management and registry enhancements
+- Performance and memory improvements for large datasets
 
 Contributions should prefer designs where new hooks extend the viewer
 implicitly through shared BrkRaw abstractions, and where richer UIs are

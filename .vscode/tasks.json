@@ -9,30 +9,62 @@
   ],
   "tasks": [
     {
-      "label": "Dev: Install (editable)",
+      "label": "Standard: MkDocs Serve",
       "type": "shell",
-      "command": "\"${command:python.interpreterPath}\" -m pip install -e .",
+      "command": "\"${command:python.interpreterPath}\" -m mkdocs serve",
       "group": "build",
       "problemMatcher": []
     },
     {
-      "label": "Dev: Compile (py_compile)",
+      "label": "Optional: Release Prep (bump + notes)",
       "type": "shell",
-      "command": "PYTHONPYCACHEPREFIX=${workspaceFolder}/.pycache \"${command:python.interpreterPath}\" -m compileall -q src/brkraw_viewer",
+      "command": "\"${command:python.interpreterPath}\" scripts/update_contributors.py --source github --repo BrkRaw/brkraw-viewer --output docs/dev/contributors.md && \"${command:python.interpreterPath}\" scripts/release_prep.py --version ${input:releaseVersion} --fetch-tags --remote upstream",
+      "windows": {
+        "command": "pwsh -NoProfile -Command \"& \\\"${command:python.interpreterPath}\\\" scripts/update_contributors.py --source github --repo BrkRaw/brkraw-viewer --output docs/dev/contributors.md; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & \\\"${command:python.interpreterPath}\\\" scripts/release_prep.py --version ${input:releaseVersion} --fetch-tags --remote upstream\""
+      },
       "group": "build",
       "problemMatcher": []
     },
     {
-      "label": "Release: Prep (bump + notes)",
+      "label": "Standard: Release Prep PR (2-step)",
       "type": "shell",
-      "command": "\"${command:python.interpreterPath}\" scripts/release_prep.py --version ${input:releaseVersion} --fetch-tags --remote origin",
+      "command": "\"${command:python.interpreterPath}\" scripts/release_pr.py --version ${input:releaseVersion} --base upstream/main --remote-upstream upstream --remote-origin origin",
       "group": "build",
       "problemMatcher": []
     },
     {
-      "label": "Release: Tag + Push (origin)",
+      "label": "Optional: Release Tag + Push (upstream)",
       "type": "shell",
-      "command": "\"${command:python.interpreterPath}\" scripts/tag_and_push.py --remote origin",
+      "command": "\"${command:python.interpreterPath}\" scripts/tag_and_push.py --remote upstream",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Standard: Setup venv + deps",
+      "type": "shell",
+      "command": "python3 -m venv .venv && . .venv/bin/activate && python -m pip install -U pip && python -m pip install -e . && python -m pip install mkdocs-material build twine packaging",
+      "windows": {
+        "command": "py -m venv .venv; .venv\\Scripts\\Activate.ps1; python -m pip install -U pip; python -m pip install -e .; python -m pip install mkdocs-material build twine packaging",
+        "options": {
+          "shell": {
+            "executable": "pwsh"
+          }
+        }
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Optional: Docs Update Contributors (git)",
+      "type": "shell",
+      "command": "\"${command:python.interpreterPath}\" scripts/update_contributors.py --source git --output docs/dev/contributors.md",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Optional: Docs Update Contributors (GitHub API)",
+      "type": "shell",
+      "command": "\"${command:python.interpreterPath}\" scripts/update_contributors.py --source github --repo BrkRaw/brkraw-viewer --output docs/dev/contributors.md",
       "group": "build",
       "problemMatcher": []
     },
