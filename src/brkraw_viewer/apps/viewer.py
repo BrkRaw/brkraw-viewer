@@ -4,7 +4,7 @@ import logging
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, cast, List, Callable
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, cast, List, Callable, Protocol
 import datetime as dt
 from pathlib import Path
 import sys
@@ -48,6 +48,30 @@ WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 760
 
 logger = logging.getLogger("brkraw.viewer")
+
+
+class ViewerRenderer(Protocol):
+    def set_click_callback(self, callback: Optional[Callable[[str, int, int], None]]) -> None:
+        ...
+
+    def set_zoom_callback(self, callback: Optional[Callable[[int], None]]) -> None:
+        ...
+
+    def show_message_on(self, view: str, message: str, *, is_error: bool = False) -> None:
+        ...
+
+    def show_message(self, message: str, *, is_error: bool = False) -> None:
+        ...
+
+    def render_views(
+        self,
+        views: Dict[str, Tuple[np.ndarray, Tuple[float, float]]],
+        titles: Dict[str, str],
+        *,
+        crosshair: Optional[Dict[str, Tuple[int, int]]] = None,
+        show_crosshair: bool = False,
+    ) -> None:
+        ...
 
 
 class _Tooltip:
@@ -242,6 +266,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._layout_template_var.trace_add("write", lambda *_: self._on_layout_template_change())
         self._viewer_host: Optional[ttk.Frame] = None
         self._viewer_widget: Optional[Any] = None
+        self._viewer: Optional[ViewerRenderer] = None
         self._subject_window: Optional[tk.Toplevel] = None
         self._subject_entries: Dict[str, ttk.Entry] = {}
         self._subject_summary_entries: list[ttk.Entry] = []
@@ -268,6 +293,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             "Subject ID": tk.StringVar(value="None"),
             "Study Date": tk.StringVar(value="None"),
         }
+        self._registry_column_menu_vars: list[tk.BooleanVar] = []
         self._extensions_tab: Optional[ttk.Frame] = None
         self._extensions_combo: Optional[ttk.Combobox] = None
         self._extensions_container: Optional[ttk.Frame] = None
@@ -276,7 +302,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._detached_tabs: Dict[str, Tuple[tk.Toplevel, tk.Widget]] = {}
         self._tab_titles: Dict[tk.Widget, str] = {}
         self._tab_order: list[str] = []
-        self._tab_builders: Dict[str, Callable[[tk.Misc], ttk.Frame]] = {}
+        self._tab_builders: Dict[str, Callable[[tk.Misc], Optional[ttk.Frame]]] = {}
         self._tab_widgets: Dict[str, tk.Widget] = {}
 
         self._init_ui()
@@ -429,11 +455,12 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if not isinstance(widget, tk.Widget):
             raise TypeError("Viewer widget must be a tkinter widget or expose .widget.")
         widget.grid(row=0, column=0, sticky="nsew")
-        self._viewer = viewer
-        if hasattr(viewer, "set_click_callback"):
-            viewer.set_click_callback(self._on_view_click)
-        if hasattr(viewer, "set_zoom_callback"):
-            viewer.set_zoom_callback(self._on_zoom_wheel)
+        viewer_adapter = cast(ViewerRenderer, viewer)
+        self._viewer = viewer_adapter
+        if hasattr(viewer_adapter, "set_click_callback"):
+            viewer_adapter.set_click_callback(self._on_view_click)
+        if hasattr(viewer_adapter, "set_zoom_callback"):
+            viewer_adapter.set_zoom_callback(self._on_zoom_wheel)
 
     def _build_extensions_tab(self, parent: tk.Misc) -> Optional[ttk.Frame]:
         if not self._viewer_hooks:
@@ -529,7 +556,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 except Exception as exc:
                     logger.warning("Viewer hook scan callback failed: %s", exc)
 
-    def _register_tab_builder(self, title: str, builder: Callable[[tk.Misc], ttk.Frame]) -> None:
+    def _register_tab_builder(self, title: str, builder: Callable[[tk.Misc], Optional[ttk.Frame]]) -> None:
         self._tab_builders[title] = builder
         if title not in self._tab_order:
             self._tab_order.append(title)
@@ -604,6 +631,12 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         window.columnconfigure(0, weight=1)
         window.rowconfigure(0, weight=1)
         frame = self._tab_builders[title](window)
+        if frame is None:
+            try:
+                window.destroy()
+            except Exception:
+                pass
+            return
         frame.grid(row=0, column=0, sticky="nsew")
         window.protocol("WM_DELETE_WINDOW", lambda: self._attach_tab(title))
         self._detached_tabs[title] = (window, frame)
@@ -1431,11 +1464,11 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             menu.add_command(label="Move Right", command=lambda: self._registry_move_column(clicked_key, 1))
             menu.add_separator()
 
-        menu._vars = []
+        self._registry_column_menu_vars = []
         for col in self._registry_columns:
             key = col["key"]
             var = tk.BooleanVar(value=not col.get("hidden"))
-            menu._vars.append(var)
+            self._registry_column_menu_vars.append(var)
             menu.add_checkbutton(
                 label=str(col.get("title") or key),
                 variable=var,
@@ -2816,10 +2849,16 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 raw = yaml.safe_load(path.read_text(encoding="utf-8"))
             else:
                 raw = {}
-            if not isinstance(raw, dict):
-                raw = {}
-            meta = raw.get("__meta__") if isinstance(raw.get("__meta__"), dict) else {}
-            body = {k: v for k, v in raw.items() if k != "__meta__"}
+            if isinstance(raw, dict):
+                raw_dict = cast(Dict[str, Any], raw)
+            else:
+                raw_dict = {}
+            meta: Dict[str, Any] = (
+                cast(Dict[str, Any], raw_dict.get("__meta__"))
+                if isinstance(raw_dict.get("__meta__"), dict)
+                else {}
+            )
+            body = {k: v for k, v in raw_dict.items() if k != "__meta__"}
             self._set_meta_form_values(meta_fields, meta)
             body_text.delete("1.0", tk.END)
             body_text.insert(tk.END, self._format_yaml(body))
@@ -3156,7 +3195,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         snippets: Dict[str, str] = dict(self._load_default_snippets(kind))
         folder = self._snippets_dir(kind)
         if folder.exists():
-            for path in sorted(folder.glob("*.yaml")):
+            for path in sorted(folder.glob("*.yaml"), key=lambda p: p.name):
                 try:
                     snippets[path.stem] = path.read_text(encoding="utf-8")
                 except Exception:
@@ -3175,11 +3214,12 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return {}
         if not base.is_dir():
             return {}
-        for path in sorted(base.iterdir()):
+        for path in sorted(base.iterdir(), key=lambda p: p.name):
             if not path.name.endswith(".yaml"):
                 continue
             try:
-                snippets[path.stem] = path.read_text(encoding="utf-8")
+                stem = path.name.rsplit(".", 1)[0]
+                snippets[stem] = path.read_text(encoding="utf-8")
             except Exception:
                 continue
         return snippets
@@ -3475,7 +3515,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 label = f"{title} {arrow}"
             tree.heading(key, text=label)
 
-    def _params_sort_value(self, item: tuple[str, str, Any], key: str) -> Tuple[int, Any]:
+    def _params_sort_value(self, item: tuple[str, str, Any], key: str) -> Tuple[int, float, str]:
         src, path, value = item
         if key == "file":
             return self._params_sort_scalar(src)
@@ -4425,15 +4465,18 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         }
 
     def _update_plot(self) -> None:
+        viewer = self._viewer
+        if viewer is None:
+            return
         if self._view_error:
-            if hasattr(self._viewer, "show_message_on"):
-                self._viewer.show_message_on("xy", self._view_error, is_error=True)
+            if hasattr(viewer, "show_message_on"):
+                viewer.show_message_on("xy", self._view_error, is_error=True)
             else:
-                self._viewer.show_message(self._view_error, is_error=True)
+                viewer.show_message(self._view_error, is_error=True)
             return
         slices = self._orth_slices()
         if self._data is None or slices is None:
-            self._viewer.show_message("No data loaded", is_error=False)
+            viewer.show_message("No data loaded", is_error=False)
             return
 
         zoom = float(self._zoom_var.get() or 1.0)
@@ -4465,7 +4508,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         else:
             crosshair = crosshair_base
 
-        self._viewer.render_views(
+        viewer.render_views(
             slices,
             title_map,
             crosshair=crosshair,
