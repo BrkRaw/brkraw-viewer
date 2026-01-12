@@ -4352,7 +4352,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             try:
                 from tkinter import messagebox
 
-                if messagebox.askyesno("BrkRaw Viewer", "Cache를 삭제하시겠습니까?"):
+                if messagebox.askyesno("BrkRaw Viewer", "Clear cached data before closing?"):
                     self._clear_data_cache()
             except Exception:
                 pass
