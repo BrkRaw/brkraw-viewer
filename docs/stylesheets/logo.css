@@ -1,0 +1,4 @@
+[data-md-color-scheme="slate"] .md-header__button.md-logo img,
+[data-md-color-scheme="slate"] .md-nav__button.md-logo img {
+  content: url("../assets/brkraw-viewer-logo-dark.svg");
+}

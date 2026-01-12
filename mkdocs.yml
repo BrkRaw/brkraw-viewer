@@ -4,7 +4,7 @@ repo_url: https://github.com/brkraw/brkraw-viewer
 repo_name: brkraw/brkraw-viewer
 theme:
   name: material
-  logo: assets/brkraw-viewer-logo.svg
+  logo: assets/brkraw-viewer-logo-light.svg
   features:
     - navigation.tabs
     - navigation.sections
@@ -13,6 +13,8 @@ markdown_extensions:
   - admonition
   - toc:
       permalink: true
+extra_css:
+  - stylesheets/logo.css
 nav:
   - Home: index.md
   - User Guide:

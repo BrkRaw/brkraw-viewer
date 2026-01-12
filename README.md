@@ -1,4 +1,9 @@
-# ![BrkRaw Viewer](docs/assets/brkraw-viewer-logo.svg)
+<h1 align="left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brkraw-viewer-logo-dark.svg">
+    <img alt="BrkRaw Viewer" src="docs/assets/brkraw-viewer-logo-light.svg" width="395">
+  </picture>
+</h1>
 
 BrkRaw Viewer is an interactive dataset viewer implemented as a
 separate CLI plugin for the `brkraw` command.
