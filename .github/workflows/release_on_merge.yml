@@ -27,18 +27,10 @@ jobs:
           fi
           version=$(python3 - <<'PY'
           import re
-          import subprocess
+          from pathlib import Path
 
-          merge_sha = "${{ github.event.pull_request.merge_commit_sha }}"
-          result = subprocess.run(
-              ["git", "show", f"{merge_sha}:src/brkraw_viewer/__init__.py"],
-              check=False,
-              capture_output=True,
-              text=True,
-          )
-          if result.returncode != 0:
-              raise SystemExit("Failed to read src/brkraw_viewer/__init__.py from merge commit")
-          match = re.search(r"__version__\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]", result.stdout)
+          text = Path("src/brkraw_viewer/__init__.py").read_text(encoding="utf-8")
+          match = re.search(r"__version__\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]", text)
           if not match:
               raise SystemExit("No __version__ found in src/brkraw_viewer/__init__.py")
           print(match.group(1))
