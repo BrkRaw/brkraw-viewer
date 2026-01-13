@@ -1,7 +1,7 @@
 <h1 align="left">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brkraw-viewer-logo-dark.svg">
-    <img alt="BrkRaw Viewer" src="docs/assets/brkraw-viewer-logo-light.svg" width="395">
+    <img alt="BrkRaw Viewer" src="docs/assets/brkraw-viewer-logo-light.svg" width="410">
   </picture>
 </h1>
 
@@ -119,10 +119,12 @@ archives using `Load` (folder or archive file).
 Recent updates:
 
 - Open folders or archives (`.zip` / `.PvDatasets`)
-- Viewer: `Space` (`raw/scanner/subject_ras`), nibabel RAS display, click-to-set `X/Y/Z`, optional crosshair + zoom, slicepack/frame sliders only when needed
+- Viewer: `Space` (`raw/scanner/subject_ras`), nibabel RAS display, click-to-set `X/Y/Z`, optional crosshair + zoom,
+  slicepack/frame sliders only when needed
 - Info: rule + spec selection (installed or file), parameter search, lazy Viewer refresh on tab focus
 - Registry: add the current session from the `+` menu when a dataset is loaded
-- Convert: BrkRaw layout engine, template + suffix defaults from `~/.brkraw/config.yaml`, keys browser (click to add), optional config `layout_entries`
+- Convert: BrkRaw layout engine, template + suffix defaults from `~/.brkraw/config.yaml`, keys browser (click to add),
+  optional config `layout_entries`
 - Config: edit `~/.brkraw/config.yaml` in-app; basic focus/icon UX
 
 This update keeps dependencies minimal and preserves compatibility with
