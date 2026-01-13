@@ -4600,13 +4600,27 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return None
         data = self._data
         if data.ndim > 3:
+            slicer = [slice(None)] * data.ndim
+            frame_axis = 3
             frame = int(self._frame_var.get())
-            data = data[..., frame]
+            frame_size = data.shape[frame_axis]
+            if frame_size > 0:
+                frame = min(max(frame, 0), frame_size - 1)
+            else:
+                frame = 0
+            slicer[frame_axis] = frame
             for idx, var in enumerate(self._extra_dim_vars):
-                dim_index = int(var.get())
-                if data.ndim <= 3:
+                axis = 4 + idx
+                if axis >= data.ndim:
                     break
-                data = data[..., dim_index]
+                dim_index = int(var.get())
+                dim_size = data.shape[axis]
+                if dim_size > 0:
+                    dim_index = min(max(dim_index, 0), dim_size - 1)
+                else:
+                    dim_index = 0
+                slicer[axis] = dim_index
+            data = data[tuple(slicer)]
         return data
 
     def _orth_slices(self) -> Optional[Dict[str, Tuple[np.ndarray, Tuple[float, float]]]]:
