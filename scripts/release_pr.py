@@ -96,7 +96,25 @@ def gh_pr_number(upstream_repo: str, head_ref: str) -> str | None:
         check=False,
     )
     if result.returncode != 0:
-        return None
+        list_result = run_cmd(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--repo",
+                upstream_repo,
+                "--head",
+                head_ref,
+                "--json",
+                "number",
+                "--jq",
+                ".[0].number",
+            ],
+            check=False,
+        )
+        if list_result.returncode != 0:
+            return None
+        return list_result.stdout.strip() or None
     return result.stdout.strip()
 
 
@@ -291,7 +309,11 @@ def main() -> int:
             "- [ ] `release` label applied\n"
             "- [ ] Tag on merge\n"
         )
-        gh_pr_create(upstream_repo_full, base_branch, head_ref, title, body)
+        try:
+            gh_pr_create(upstream_repo_full, base_branch, head_ref, title, body)
+        except SystemExit as exc:
+            if "already exists" not in str(exc):
+                raise
         pr_number = gh_pr_number(upstream_repo_full, head_ref)
 
     run_update_contributors(upstream_repo_full)
