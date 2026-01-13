@@ -1,8 +1,19 @@
-# Release v0.2.1
+# Release v0.2.2
 
 Date: 2026-01-12
 Changes since 0.2.0
 
+- chore: prepare release v0.2.2 (ab413cf)
+- fix: continue when release PR already exists (54c09ad)
+- ignore vscode local setting (de5cd59)
+- fix: skip contributors commit when unchanged (7007c03)
+- docs: ignore MD041 (b58db52)
+- docs: logo, base64 font (ec75f22)
+- docs: logo (ad9244f)
+- Revert "brkraw-viewer 0.2.1 release" (897b3d4)
+- Pin checkout to merge commit for release (1a028f0)
+- Fix release version detection on merge (7c6fdb0)
+- 0.2.1 release prep (241a48f)
 - Update docs deploy and mkdocs deps (69467b6)
 - Document release flow and update contributors (b86897d)
 - Add PR-based release automation (8b261c1)
