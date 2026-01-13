@@ -23,6 +23,11 @@ jobs:
     if: ${{ github.repository == 'BrkRaw/brkraw-viewer' && (github.event_name != 'release' || github.event.release.prerelease == false) }}
     runs-on: ubuntu-latest
     steps:
+      - name: Require tag for manual publish
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag == '' }}
+        run: |
+          echo "Manual publish requires a tag input (e.g. v1.2.3)."
+          exit 1
       - name: Resolve tag
         id: tag
         run: |
