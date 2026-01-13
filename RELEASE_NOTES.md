@@ -3,6 +3,10 @@
 Date: 2026-01-12
 Changes since 0.2.0
 
+- fix: skip release commits when unchanged (045315e)
+- chore(ci): log init version source during release (67e1f44)
+- fix(ci): fall back to pyproject version on merge (188a3c3)
+- docs: release notes for v0.2.3 (09474e6)
 - chore: prepare release v0.2.3 (117ad59)
 - fix: correct app icon asset path (6925867)
 - docs: release notes for v0.2.2 (2ab8dce)
