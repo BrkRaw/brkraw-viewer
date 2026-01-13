@@ -30,11 +30,32 @@ jobs:
           import re
           from pathlib import Path
 
-          text = Path("src/brkraw_viewer/__init__.py").read_text(encoding="utf-8")
-          match = re.search(r"__version__\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]", text)
-          if not match:
-              raise SystemExit("No __version__ found in src/brkraw_viewer/__init__.py")
-          print(match.group(1))
+          def read_version_from_init() -> str | None:
+              init_path = Path("src/brkraw_viewer/__init__.py")
+              if not init_path.exists():
+                  return None
+              text = init_path.read_text(encoding="utf-8")
+              match = re.search(r"__version__\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]", text)
+              if not match:
+                  return None
+              return match.group(1)
+
+          def read_version_from_pyproject() -> str | None:
+              pyproject = Path("pyproject.toml")
+              if not pyproject.exists():
+                  return None
+              text = pyproject.read_text(encoding="utf-8")
+              try:
+                  import tomllib
+              except ModuleNotFoundError:  # pragma: no cover
+                  import tomli as tomllib
+              data = tomllib.loads(text)
+              return data.get("project", {}).get("version")
+
+          version = read_version_from_init() or read_version_from_pyproject()
+          if not version:
+              raise SystemExit("No version found in src/brkraw_viewer/__init__.py or pyproject.toml")
+          print(version)
           PY
           )
           echo "changed=true" >> "$GITHUB_OUTPUT"
