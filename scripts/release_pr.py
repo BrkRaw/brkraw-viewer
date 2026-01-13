@@ -203,6 +203,14 @@ def commit_files(message: str, files: Iterable[Path]) -> None:
     run_git(["commit", "-m", message], check=True)
 
 
+def files_have_changes(files: Iterable[Path]) -> bool:
+    rel_paths = [str(path.relative_to(REPO_ROOT)) for path in files]
+    if not rel_paths:
+        return False
+    result = run_git(["status", "--porcelain", "--", *rel_paths], check=True)
+    return bool(result.stdout.strip())
+
+
 def generate_release_notes(version: str, upstream_ref: str) -> None:
     tag_result = run_git(["describe", "--tags", "--abbrev=0", upstream_ref], check=False)
     last_tag = tag_result.stdout.strip() if tag_result.returncode == 0 else None
@@ -287,8 +295,11 @@ def main() -> int:
         pr_number = gh_pr_number(upstream_repo_full, head_ref)
 
     run_update_contributors(upstream_repo_full)
-    contributors_message = "docs: update contributors"
-    commit_files(contributors_message, [CONTRIBUTORS_PATH])
+    if files_have_changes([CONTRIBUTORS_PATH]):
+        contributors_message = "docs: update contributors"
+        commit_files(contributors_message, [CONTRIBUTORS_PATH])
+    else:
+        print("No contributor changes detected; skipping contributors commit.")
 
     run_release_prep(args.version, args.remote_upstream)
     prep_message = args.prep_message.format(version=args.version)
