@@ -15,7 +15,6 @@ import json
 
 import numpy as np
 import pprint
-import importlib
 import yaml
 
 from brkraw.apps.loader import BrukerLoader
@@ -734,8 +733,8 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
     def _set_app_icon(self) -> None:
         try:
-            here = Path(__file__).resolve().parent
-            assets = here / "assets"
+            package_root = Path(__file__).resolve().parents[1]
+            assets = package_root / "assets"
             png = assets / "icon.png"
             ico = assets / "icon.ico"
         except Exception:

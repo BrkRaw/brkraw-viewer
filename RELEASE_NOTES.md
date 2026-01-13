@@ -1,8 +1,11 @@
-# Release v0.2.2
+# Release v0.2.3
 
 Date: 2026-01-12
 Changes since 0.2.0
 
+- chore: prepare release v0.2.3 (117ad59)
+- fix: correct app icon asset path (6925867)
+- docs: release notes for v0.2.2 (2ab8dce)
 - chore: prepare release v0.2.2 (ab413cf)
 - fix: continue when release PR already exists (54c09ad)
 - ignore vscode local setting (de5cd59)
