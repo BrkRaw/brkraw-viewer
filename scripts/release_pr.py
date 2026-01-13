@@ -325,11 +325,18 @@ def main() -> int:
 
     run_release_prep(args.version, args.remote_upstream)
     prep_message = args.prep_message.format(version=args.version)
-    commit_files(prep_message, [INIT_PATH, README_PATH, PYPROJECT_PATH])
+    prep_files = [INIT_PATH, README_PATH, PYPROJECT_PATH]
+    if files_have_changes(prep_files):
+        commit_files(prep_message, prep_files)
+    else:
+        print("No version metadata changes detected; skipping version bump commit.")
 
     generate_release_notes(args.version, args.base)
     notes_message = args.notes_message.format(version=args.version)
-    commit_files(notes_message, [RELEASE_NOTES_PATH])
+    if files_have_changes([RELEASE_NOTES_PATH]):
+        commit_files(notes_message, [RELEASE_NOTES_PATH])
+    else:
+        print("No release notes changes detected; skipping release notes commit.")
 
     if pr_number:
         changed_files = get_changed_files(args.base)
