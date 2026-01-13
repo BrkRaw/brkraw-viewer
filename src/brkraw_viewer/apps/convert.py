@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import pprint
 import tkinter as tk
 import logging
 import json
