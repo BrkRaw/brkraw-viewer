@@ -3623,13 +3623,16 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return
         path = Path(target)
         try:
-            if isinstance(payload, dict):
-                if path.suffix.lower() in {".yaml", ".yml"}:
-                    content = self._format_yaml(payload)
-                else:
-                    content = json.dumps(payload, indent=2, sort_keys=False)
+            if isinstance(payload, str):
+                content = payload
             else:
-                content = str(payload)
+                safe_payload = self._to_yaml_safe(payload)
+                if path.suffix.lower() in {".yaml", ".yml"}:
+                    content = self._format_yaml(safe_payload)
+                elif path.suffix.lower() == ".json":
+                    content = json.dumps(safe_payload, indent=2, sort_keys=False)
+                else:
+                    content = str(payload)
             path.write_text(content, encoding="utf-8")
         except Exception as exc:
             messagebox.showerror("Save Output", f"Failed to save:\n{exc}")
