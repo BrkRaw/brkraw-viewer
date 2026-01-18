@@ -28,6 +28,13 @@ viewer = "brkraw_viewer.plugin:register"
 docs = [
   "mkdocs-material>=9.5.0",
 ]
+test = [
+  "pytest>=7.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
