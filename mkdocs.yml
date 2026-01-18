@@ -4,7 +4,7 @@ repo_url: https://github.com/brkraw/brkraw-viewer
 repo_name: brkraw/brkraw-viewer
 theme:
   name: material
-  logo: assets/brkraw-viewer-logo-light.svg
+  logo: assets/brkraw-viewer-logo-dark.svg
   features:
     - navigation.tabs
     - navigation.sections
