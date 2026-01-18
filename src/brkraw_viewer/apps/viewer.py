@@ -2442,7 +2442,13 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             stripped = {k: v for k, v in data.items() if k != "__meta__"}
             validate_rules(stripped)
         except Exception as exc:
-            messagebox.showerror("Rule", f"Rule validation failed:\n{exc}")
+            action = self._prompt_rule_validation_action(exc, path)
+            if action == "uninstall":
+                if self._uninstall_rule_file(path):
+                    self._refresh_rule_files()
+                return
+            if action != "ignore":
+                return
         choices: Dict[str, Dict[str, Any]] = {}
         for cat, items in data.items():
             if not isinstance(items, list):
@@ -2465,6 +2471,61 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             rule_state["name_var"].set(values[0])
         self._update_rule_details(category)
         self._apply_rule_combo_state(category)
+
+    def _prompt_rule_validation_action(self, exc: Exception, path: str) -> str:
+        can_uninstall = self._is_installed_rule_path(path)
+        action = {"value": "cancel"}
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Rule")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        message = f"Rule validation failed:\n{exc}\n\nRule file:\n{path}"
+        label = ttk.Label(dialog, text=message, justify="left", wraplength=480)
+        label.grid(row=0, column=0, padx=16, pady=12, sticky="w")
+
+        button_row = ttk.Frame(dialog)
+        button_row.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="e")
+
+        def _set_action(value: str) -> None:
+            action["value"] = value
+            dialog.destroy()
+
+        ttk.Button(button_row, text="Ignore", command=lambda: _set_action("ignore")).pack(side=tk.LEFT, padx=(0, 8))
+        if can_uninstall:
+            ttk.Button(button_row, text="Uninstall", command=lambda: _set_action("uninstall")).pack(
+                side=tk.LEFT, padx=(0, 8)
+            )
+        ttk.Button(button_row, text="Cancel", command=lambda: _set_action("cancel")).pack(side=tk.LEFT)
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: _set_action("cancel"))
+        self.wait_window(dialog)
+        return action["value"]
+
+    def _is_installed_rule_path(self, path: str) -> bool:
+        try:
+            rules_dir = config_core.paths(root=None).rules_dir.resolve()
+        except Exception:
+            return False
+        try:
+            Path(path).resolve().relative_to(rules_dir)
+        except ValueError:
+            return False
+        return True
+
+    def _uninstall_rule_file(self, path: str) -> bool:
+        name = Path(path).name
+        try:
+            removed = addon_app.remove(name, root=resolve_root(None), kind="rule")
+        except Exception as exc:
+            messagebox.showerror("Rule", f"Failed to uninstall rule:\n{exc}")
+            return False
+        if path in self._addon_rule_session_files:
+            self._addon_rule_session_files = [item for item in self._addon_rule_session_files if item != path]
+        self._set_info_output("Removed rule:\n" + "\n".join(str(item) for item in removed))
+        return True
 
     def _set_rule_description(self, category: str, text: str) -> None:
         rule_state = self._addon_rule_sections[category]
