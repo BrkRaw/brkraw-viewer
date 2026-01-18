@@ -2028,7 +2028,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             scan = self._study.avail.get(scan_id)
             info = scan_info_all.get(scan_id) or self._resolve_scan_info(scan_id, scan)
             protocol = self._format_value(info.get("Protocol", "N/A"))
-            self._scan_listbox.insert(tk.END, f"{scan_id:03d} :: {protocol}")
+            method = self._format_value(info.get("Method", "")).strip()
+            suffix = f" ({method})" if method else ""
+            self._scan_listbox.insert(tk.END, f"{scan_id:03d} :: {protocol}{suffix}")
 
     def _select_scan(self, scan_id: int) -> None:
         if scan_id not in self._scan_ids:
@@ -4171,6 +4173,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
     def _on_space_change(self) -> None:
         self._update_space_controls()
+        self._update_convert_space_controls()
         if self._current_reco_id is None:
             return
         self._mark_viewer_dirty()
