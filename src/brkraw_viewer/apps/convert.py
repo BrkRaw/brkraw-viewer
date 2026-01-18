@@ -106,62 +106,69 @@ class ConvertTabMixin:
 
         output_layout = ttk.LabelFrame(layout_tab, text="Output Layout", padding=(8, 8))
         output_layout.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        left_width = 350
+        output_layout.columnconfigure(0, minsize=left_width)
         output_layout.columnconfigure(1, weight=1)
 
-        ttk.Label(output_layout, text="Layout source").grid(row=0, column=0, sticky="w")
+        layout_left = ttk.Frame(output_layout)
+        layout_left.grid(row=0, column=0, sticky="nsew")
+        layout_left.columnconfigure(1, weight=1)
+        layout_left.columnconfigure(2, weight=0)
+
+        ttk.Label(layout_left, text="Layout source").grid(row=0, column=0, sticky="w")
         self._layout_source_combo = ttk.Combobox(
-            output_layout,
+            layout_left,
             textvariable=self._layout_source_var,
             values=tuple(self._layout_source_choices()),
             state="readonly",
         )
         self._layout_source_combo.grid(row=0, column=1, sticky="ew")
+        self._layout_source_combo.configure(width=14)
         self._layout_source_combo.bind("<<ComboboxSelected>>", lambda *_: self._update_layout_controls())
         self._layout_auto_check = ttk.Checkbutton(
-            output_layout,
+            layout_left,
             text="Auto",
             variable=self._layout_auto_var,
             command=self._update_layout_controls,
         )
-        self._layout_auto_check.grid(row=0, column=2, sticky="e")
+        self._layout_auto_check.grid(row=0, column=2, sticky="w", padx=(8, 0))
 
-        ttk.Label(output_layout, text="Rule").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(output_layout, textvariable=self._layout_rule_display_var, state="readonly").grid(
-            row=1, column=1, sticky="ew", pady=(8, 0)
+        ttk.Label(layout_left, text="Rule").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(layout_left, textvariable=self._layout_rule_display_var, state="readonly").grid(
+            row=1, column=1, columnspan=2, sticky="ew", pady=(8, 0)
         )
 
-        ttk.Label(output_layout, text="Info spec").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(output_layout, textvariable=self._layout_info_spec_display_var, state="readonly").grid(
-            row=2, column=1, sticky="ew", pady=(6, 0)
+        ttk.Label(layout_left, text="Info spec").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(layout_left, textvariable=self._layout_info_spec_display_var, state="readonly").grid(
+            row=2, column=1, columnspan=2, sticky="ew", pady=(6, 0)
         )
 
-        ttk.Label(output_layout, text="Metadata spec").grid(row=3, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(output_layout, textvariable=self._layout_metadata_spec_display_var, state="readonly").grid(
-            row=3, column=1, sticky="ew", pady=(6, 0)
+        ttk.Label(layout_left, text="Metadata spec").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(layout_left, textvariable=self._layout_metadata_spec_display_var, state="readonly").grid(
+            row=3, column=1, columnspan=2, sticky="ew", pady=(6, 0)
         )
 
-        ttk.Label(output_layout, text="Context map").grid(row=4, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(output_layout, textvariable=self._layout_context_map_display_var, state="readonly").grid(
-            row=4, column=1, sticky="ew", pady=(6, 0)
+        ttk.Label(layout_left, text="Context map").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(layout_left, textvariable=self._layout_context_map_display_var, state="readonly").grid(
+            row=4, column=1, columnspan=2, sticky="ew", pady=(6, 0)
         )
 
-        ttk.Label(output_layout, text="Template").grid(row=5, column=0, sticky="w", pady=(10, 0))
-        self._layout_template_entry = ttk.Entry(output_layout, textvariable=self._layout_template_var)
-        self._layout_template_entry.grid(row=5, column=1, sticky="ew", pady=(10, 0))
+        ttk.Label(layout_left, text="Template").grid(row=5, column=0, sticky="w", pady=(10, 0))
+        self._layout_template_entry = ttk.Entry(layout_left, textvariable=self._layout_template_var)
+        self._layout_template_entry.grid(row=5, column=1, columnspan=2, sticky="ew", pady=(10, 0))
         self._layout_template_combo = None
 
-        ttk.Label(output_layout, text="Slicepack suffix").grid(row=6, column=0, sticky="w", pady=(6, 0))
-        ttk.Entry(output_layout, textvariable=self._slicepack_suffix_var, state="readonly").grid(
-            row=6, column=1, sticky="ew", pady=(6, 0)
+        ttk.Label(layout_left, text="Slicepack suffix").grid(row=6, column=0, sticky="w", pady=(6, 0))
+        ttk.Entry(layout_left, textvariable=self._slicepack_suffix_var, state="readonly").grid(
+            row=6, column=1, columnspan=2, sticky="ew", pady=(6, 0)
         )
 
-        output_layout.columnconfigure(3, weight=0)
         keys_frame = ttk.LabelFrame(output_layout, text="Keys", padding=(6, 6))
-        keys_frame.grid(row=0, column=3, rowspan=7, sticky="nsew", padx=(10, 0))
+        keys_frame.grid(row=0, column=1, rowspan=7, sticky="nsew", padx=(10, 0))
         keys_frame.columnconfigure(0, weight=1)
         keys_frame.rowconfigure(1, weight=1)
         self._layout_keys_title = tk.StringVar(value="Key (select then +)")
-        ttk.Label(keys_frame, textvariable=self._layout_keys_title).grid(row=0, column=0, sticky="w")
+        ttk.Label(keys_frame, textvariable=self._layout_keys_title).grid_remove()
         self._layout_key_listbox = tk.Listbox(keys_frame, width=28, height=10, exportselection=False)
         self._layout_key_listbox.grid(row=1, column=0, sticky="nsew")
         keys_scroll = ttk.Scrollbar(keys_frame, orient="vertical", command=self._layout_key_listbox.yview)
@@ -184,25 +191,28 @@ class ConvertTabMixin:
 
         convert_frame = ttk.Frame(layout_tab, padding=(8, 8))
         convert_frame.grid(row=1, column=0, sticky="nsew")
-        convert_frame.columnconfigure(0, weight=1)
-        convert_frame.columnconfigure(1, weight=2)
+        convert_frame.columnconfigure(0, minsize=left_width)
+        convert_frame.columnconfigure(1, weight=1)
         convert_frame.rowconfigure(0, weight=1)
 
         convert_left = ttk.Frame(convert_frame)
-        convert_left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-        convert_left.columnconfigure(1, weight=1)
+        convert_left.grid(row=0, column=0, sticky="nsew")
+        convert_left.grid_propagate(False)
+        convert_left.configure(width=left_width)
+        convert_left.columnconfigure(0, weight=1)
 
-        ttk.Label(convert_left, text="Output dir").grid(row=0, column=0, sticky="w", pady=(0, 6))
-        ttk.Entry(convert_left, textvariable=self._output_dir_var).grid(row=0, column=1, sticky="ew", pady=(0, 6))
-        ttk.Button(convert_left, text="Browse", command=self._browse_output_dir).grid(
-            row=0, column=2, padx=(6, 0), pady=(0, 6)
-        )
+        output_row = ttk.Frame(convert_left)
+        output_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        output_row.columnconfigure(1, weight=1)
+        ttk.Label(output_row, text="Output folder").grid(row=0, column=0, sticky="w")
+        ttk.Entry(output_row, textvariable=self._output_dir_var).grid(row=0, column=1, sticky="ew", padx=(8, 6))
+        ttk.Button(output_row, text="Browse", command=self._browse_output_dir).grid(row=0, column=2, sticky="e")
 
         sidecar_row = ttk.Frame(convert_left)
-        sidecar_row.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        sidecar_row.grid(row=1, column=0, sticky="w", pady=(0, 10))
         ttk.Checkbutton(
             sidecar_row,
-            text="Sidecar",
+            text="Metadata Sidecar",
             variable=self._convert_sidecar_var,
             command=self._update_sidecar_controls,
         ).pack(side=tk.LEFT)
@@ -222,79 +232,89 @@ class ConvertTabMixin:
             variable=self._convert_sidecar_format_var,
         ).pack(side=tk.LEFT, padx=(6, 0))
 
-        ttk.Label(convert_left, text="Space").grid(row=2, column=0, sticky="w")
-        convert_space = ttk.Combobox(
-            convert_left,
-            textvariable=self._convert_space_var,
-            values=("raw", "scanner", "subject_ras"),
-            state="readonly",
-            width=12,
-        )
-        convert_space.grid(row=2, column=1, sticky="w")
-        convert_space.bind("<<ComboboxSelected>>", lambda *_: self._update_convert_space_controls())
+        orientation_title = ttk.Label(convert_left, text="Orientation")
+        orientation_title.grid(row=2, column=0, sticky="ew", pady=(0, 4))
+        orientation_title.configure(anchor="center")
 
+        use_viewer_row = ttk.Frame(convert_left)
+        use_viewer_row.grid(row=3, column=0, sticky="w")
         ttk.Checkbutton(
-            convert_left,
+            use_viewer_row,
             text="Use Viewer orientation",
             variable=self._convert_use_viewer_pose_var,
             command=self._update_convert_space_controls,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ).pack(side=tk.LEFT)
 
-        convert_subject_row = ttk.Frame(convert_left)
-        convert_subject_row.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
-        ttk.Label(convert_subject_row, text="Subject Type").pack(side=tk.LEFT)
+        space_row = ttk.Frame(convert_left)
+        space_row.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        space_row.columnconfigure(1, weight=1, uniform="orient")
+        ttk.Label(space_row, text="Space").grid(row=0, column=0, sticky="w")
+        self._convert_space_combo = ttk.Combobox(
+            space_row,
+            textvariable=self._convert_space_var,
+            values=("raw", "scanner", "subject_ras"),
+            state="readonly",
+            width=14,
+        )
+        self._convert_space_combo.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        self._convert_space_combo.bind("<<ComboboxSelected>>", lambda *_: self._update_convert_space_controls())
+
+        subject_row = ttk.Frame(convert_left)
+        subject_row.columnconfigure(1, weight=1)
         self._convert_subject_type_combo = ttk.Combobox(
-            convert_subject_row,
+            subject_row,
             textvariable=self._convert_subject_type_var,
             values=("Biped", "Quadruped", "Phantom", "Other", "OtherAnimal"),
             state="disabled",
-            width=12,
         )
-        self._convert_subject_type_combo.pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Label(convert_subject_row, text="Pose").pack(side=tk.LEFT, padx=(10, 0))
+        self._convert_subject_type_combo.grid(row=0, column=1, sticky="ew")
+
+        pose_row = ttk.Frame(convert_left)
+        pose_row.grid(row=5, column=0, sticky="ew", pady=(6, 0))
+        pose_row.columnconfigure(1, weight=1, uniform="orient")
+        pose_row.columnconfigure(2, weight=1, uniform="orient")
+        ttk.Label(pose_row, text="Pose").grid(row=0, column=0, sticky="w")
         self._convert_pose_primary_combo = ttk.Combobox(
-            convert_subject_row,
+            pose_row,
             textvariable=self._convert_pose_primary_var,
             values=("Head", "Foot"),
             state="disabled",
-            width=8,
         )
-        self._convert_pose_primary_combo.pack(side=tk.LEFT, padx=(8, 0))
+        self._convert_pose_primary_combo.grid(row=0, column=1, sticky="ew", padx=(8, 4))
         self._convert_pose_secondary_combo = ttk.Combobox(
-            convert_subject_row,
+            pose_row,
             textvariable=self._convert_pose_secondary_var,
             values=("Supine", "Prone", "Left", "Right"),
             state="disabled",
-            width=8,
         )
-        self._convert_pose_secondary_combo.pack(side=tk.LEFT, padx=(4, 0))
+        self._convert_pose_secondary_combo.grid(row=0, column=2, sticky="ew")
 
-        convert_flip_row = ttk.Frame(convert_left)
-        convert_flip_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
-        ttk.Label(convert_flip_row, text="Flip").pack(side=tk.LEFT)
+        flip_row = ttk.Frame(convert_left)
+        flip_row.grid(row=6, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(flip_row, text="Flip").pack(side=tk.LEFT, padx=(0, 6))
         self._convert_flip_x_check = ttk.Checkbutton(
-            convert_flip_row,
+            flip_row,
             text="X",
             variable=self._convert_flip_x_var,
         )
-        self._convert_flip_x_check.pack(side=tk.LEFT, padx=(8, 0))
+        self._convert_flip_x_check.pack(side=tk.LEFT)
         self._convert_flip_y_check = ttk.Checkbutton(
-            convert_flip_row,
+            flip_row,
             text="Y",
             variable=self._convert_flip_y_var,
         )
         self._convert_flip_y_check.pack(side=tk.LEFT, padx=(6, 0))
         self._convert_flip_z_check = ttk.Checkbutton(
-            convert_flip_row,
+            flip_row,
             text="Z",
             variable=self._convert_flip_z_var,
         )
         self._convert_flip_z_check.pack(side=tk.LEFT, padx=(6, 0))
 
         actions = ttk.Frame(convert_left)
-        actions.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(10, 0))
-        actions.columnconfigure(0, weight=1)
-        actions.columnconfigure(1, weight=1)
+        actions.grid(row=7, column=0, sticky="ew", pady=(10, 0))
+        actions.columnconfigure(0, weight=1, uniform="convert_actions")
+        actions.columnconfigure(1, weight=1, uniform="convert_actions")
         ttk.Button(actions, text="Preview Outputs", command=self._preview_convert_outputs).grid(row=0, column=0, sticky="ew")
         ttk.Button(actions, text="Convert", command=self._convert_current_scan).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
@@ -346,14 +366,26 @@ class ConvertTabMixin:
         self._convert_settings_text.configure(state=tk.DISABLED)
 
     def _update_convert_space_controls(self) -> None:
+        if self._convert_use_viewer_pose_var.get():
+            viewer_space = (getattr(self, "_space_var", tk.StringVar(value="scanner")).get() or "").strip()
+            if viewer_space:
+                self._convert_space_var.set(viewer_space)
+            if getattr(self, "_convert_space_combo", None) is not None:
+                self._convert_space_combo.configure(state="disabled")
+        else:
+            if getattr(self, "_convert_space_combo", None) is not None:
+                self._convert_space_combo.configure(state="readonly")
         enabled = self._convert_space_var.get() == "subject_ras"
+        logger.debug(
+            "Update convert controls: use_viewer=%s space=%s",
+            bool(self._convert_use_viewer_pose_var.get()),
+            (self._convert_space_var.get() or "").strip(),
+        )
         if self._convert_use_viewer_pose_var.get():
             self._convert_subject_type_combo.configure(state="disabled")
             self._convert_pose_primary_combo.configure(state="disabled")
             self._convert_pose_secondary_combo.configure(state="disabled")
-            self._convert_flip_x_var.set(bool(self._affine_flip_x_var.get()))
-            self._convert_flip_y_var.set(bool(self._affine_flip_y_var.get()))
-            self._convert_flip_z_var.set(bool(self._affine_flip_z_var.get()))
+            self._sync_convert_with_viewer_orientation()
             self._convert_flip_x_check.configure(state="disabled")
             self._convert_flip_y_check.configure(state="disabled")
             self._convert_flip_z_check.configure(state="disabled")
@@ -366,6 +398,31 @@ class ConvertTabMixin:
         self._convert_flip_x_check.configure(state=flip_state)
         self._convert_flip_y_check.configure(state=flip_state)
         self._convert_flip_z_check.configure(state=flip_state)
+
+    def _sync_convert_with_viewer_orientation(self) -> None:
+        if not self._convert_use_viewer_pose_var.get():
+            return
+        subject_type = (self._subject_type_var.get() or "Biped").strip()
+        pose_primary = (self._pose_primary_var.get() or "Head").strip()
+        pose_secondary = (self._pose_secondary_var.get() or "Supine").strip()
+        flip_x = bool(self._affine_flip_x_var.get())
+        flip_y = bool(self._affine_flip_y_var.get())
+        flip_z = bool(self._affine_flip_z_var.get())
+        logger.debug(
+            "Sync convert with viewer orientation: type=%s pose=%s_%s flip=(%s,%s,%s)",
+            subject_type,
+            pose_primary,
+            pose_secondary,
+            flip_x,
+            flip_y,
+            flip_z,
+        )
+        self._convert_subject_type_var.set(subject_type)
+        self._convert_pose_primary_var.set(pose_primary)
+        self._convert_pose_secondary_var.set(pose_secondary)
+        self._convert_flip_x_var.set(flip_x)
+        self._convert_flip_y_var.set(flip_y)
+        self._convert_flip_z_var.set(flip_z)
 
     def _update_layout_controls(self) -> None:
         self._sync_layout_source_state()
@@ -667,9 +724,12 @@ class ConvertTabMixin:
             for k, v in obj.items():
                 key = str(k)
                 path = f"{prefix}.{key}" if prefix else key
-                if isinstance(v, (Mapping, list, tuple)):
+                if isinstance(v, Mapping):
+                    yield from self._flatten_keys(v, path)
+                elif isinstance(v, (list, tuple)):
                     continue
-                yield path
+                else:
+                    yield path
 
     def _selected_layout_key(self) -> Optional[str]:
         if self._layout_key_listbox is None:

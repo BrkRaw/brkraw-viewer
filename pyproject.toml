@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brkraw-viewer"
-version = "0.2.3"
+version = "0.2.4"
 description = "BrkRaw scan viewer plugin for brkraw CLI."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,6 +28,13 @@ viewer = "brkraw_viewer.plugin:register"
 docs = [
   "mkdocs-material>=9.5.0",
 ]
+test = [
+  "pytest>=7.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

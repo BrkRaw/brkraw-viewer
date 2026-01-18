@@ -8,5 +8,6 @@ layout and registry preferences without editing YAML by hand.
 - Viewer display options
 - Column layout for registry tables
 - Conversion layout defaults
+- Viewer cache settings (memory-only, cleared on exit)
 
 Changes are written to `config.yaml` and applied at the next load.

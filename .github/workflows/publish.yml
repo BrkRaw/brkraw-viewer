@@ -23,6 +23,11 @@ jobs:
     if: ${{ github.repository == 'BrkRaw/brkraw-viewer' && (github.event_name != 'release' || github.event.release.prerelease == false) }}
     runs-on: ubuntu-latest
     steps:
+      - name: Require tag for manual publish
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag == '' }}
+        run: |
+          echo "Manual publish requires a tag input (e.g. v1.2.3)."
+          exit 1
       - name: Resolve tag
         id: tag
         run: |
@@ -46,35 +51,7 @@ jobs:
         env:
           TAG: ${{ steps.tag.outputs.value }}
         run: |
-          python - <<'PY'
-          import os
-          import re
-          import tomllib
-          from pathlib import Path
-          from packaging.version import parse
-
-          tag = os.environ["TAG"]
-          print(f"Target Tag: {tag}")
-
-          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-          version = pyproject.get("project", {}).get("version")
-          if not version:
-              version_path = pyproject.get("tool", {}).get("hatch", {}).get("version", {}).get("path")
-              if not version_path:
-                  raise SystemExit("No version in pyproject.toml and no hatch version path found.")
-              text = Path(version_path).read_text(encoding="utf-8")
-              match = re.search(r"__version__\\s*=\\s*[\"\\x27]([^\"\\x27]+)[\"\\x27]", text)
-              if not match:
-                  raise SystemExit(f"No __version__ found in {version_path}")
-              version = match.group(1)
-
-          print(f"Detected Package Version: {version}")
-
-          if parse(tag) != parse(version):
-              raise SystemExit(f"Tag {tag} does not match package version {version}.")
-
-          print("Version check passed!")
-          PY
+          python scripts/verify_release_version.py
       - name: Build dist
         run: python -m build
       - name: Check dist metadata

@@ -48,10 +48,10 @@ jobs:
           body_path: RELEASE_NOTES.md
           prerelease: ${{ steps.prerelease.outputs.value }}
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Post release announcement
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           TAG_NAME: ${{ steps.tag.outputs.value }}
           RELEASE_URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.value }}
