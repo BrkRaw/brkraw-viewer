@@ -191,6 +191,7 @@ class ConvertTabMixin:
         convert_left = ttk.Frame(convert_frame)
         convert_left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         convert_left.columnconfigure(1, weight=1)
+        convert_left.columnconfigure(3, weight=1)
 
         ttk.Label(convert_left, text="Output dir").grid(row=0, column=0, sticky="w", pady=(0, 6))
         ttk.Entry(convert_left, textvariable=self._output_dir_var).grid(row=0, column=1, sticky="ew", pady=(0, 6))
@@ -240,59 +241,57 @@ class ConvertTabMixin:
             command=self._update_convert_space_controls,
         ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
-        convert_subject_row = ttk.Frame(convert_left)
-        convert_subject_row.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(6, 0))
-        ttk.Label(convert_subject_row, text="Subject Type").pack(side=tk.LEFT)
+        ttk.Label(convert_left, text="Subject Type").grid(row=4, column=0, sticky="w", pady=(6, 0))
         self._convert_subject_type_combo = ttk.Combobox(
-            convert_subject_row,
+            convert_left,
             textvariable=self._convert_subject_type_var,
             values=("Biped", "Quadruped", "Phantom", "Other", "OtherAnimal"),
             state="disabled",
             width=12,
         )
-        self._convert_subject_type_combo.pack(side=tk.LEFT, padx=(8, 0))
-        ttk.Label(convert_subject_row, text="Pose").pack(side=tk.LEFT, padx=(10, 0))
+        self._convert_subject_type_combo.grid(row=4, column=1, sticky="w", padx=(8, 0), pady=(6, 0))
+
+        flip_label = ttk.Label(convert_left, text="Flip")
+        flip_label.grid(row=4, column=3, sticky="e", padx=(12, 0), pady=(6, 0))
+        self._convert_flip_x_check = ttk.Checkbutton(
+            convert_left,
+            text="X",
+            variable=self._convert_flip_x_var,
+        )
+        self._convert_flip_x_check.grid(row=4, column=4, sticky="w", padx=(6, 0), pady=(6, 0))
+        self._convert_flip_y_check = ttk.Checkbutton(
+            convert_left,
+            text="Y",
+            variable=self._convert_flip_y_var,
+        )
+        self._convert_flip_y_check.grid(row=4, column=5, sticky="w", padx=(6, 0), pady=(6, 0))
+        self._convert_flip_z_check = ttk.Checkbutton(
+            convert_left,
+            text="Z",
+            variable=self._convert_flip_z_var,
+        )
+        self._convert_flip_z_check.grid(row=4, column=6, sticky="w", padx=(6, 0), pady=(6, 0))
+
+        ttk.Label(convert_left, text="Pose").grid(row=5, column=0, sticky="w", pady=(8, 0))
         self._convert_pose_primary_combo = ttk.Combobox(
-            convert_subject_row,
+            convert_left,
             textvariable=self._convert_pose_primary_var,
             values=("Head", "Foot"),
             state="disabled",
             width=8,
         )
-        self._convert_pose_primary_combo.pack(side=tk.LEFT, padx=(8, 0))
+        self._convert_pose_primary_combo.grid(row=5, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
         self._convert_pose_secondary_combo = ttk.Combobox(
-            convert_subject_row,
+            convert_left,
             textvariable=self._convert_pose_secondary_var,
             values=("Supine", "Prone", "Left", "Right"),
             state="disabled",
             width=8,
         )
-        self._convert_pose_secondary_combo.pack(side=tk.LEFT, padx=(4, 0))
-
-        convert_flip_row = ttk.Frame(convert_left)
-        convert_flip_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
-        ttk.Label(convert_flip_row, text="Flip").pack(side=tk.LEFT)
-        self._convert_flip_x_check = ttk.Checkbutton(
-            convert_flip_row,
-            text="X",
-            variable=self._convert_flip_x_var,
-        )
-        self._convert_flip_x_check.pack(side=tk.LEFT, padx=(8, 0))
-        self._convert_flip_y_check = ttk.Checkbutton(
-            convert_flip_row,
-            text="Y",
-            variable=self._convert_flip_y_var,
-        )
-        self._convert_flip_y_check.pack(side=tk.LEFT, padx=(6, 0))
-        self._convert_flip_z_check = ttk.Checkbutton(
-            convert_flip_row,
-            text="Z",
-            variable=self._convert_flip_z_var,
-        )
-        self._convert_flip_z_check.pack(side=tk.LEFT, padx=(6, 0))
+        self._convert_pose_secondary_combo.grid(row=5, column=2, sticky="w", padx=(4, 0), pady=(8, 0))
 
         actions = ttk.Frame(convert_left)
-        actions.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        actions.grid(row=6, column=0, columnspan=7, sticky="ew", pady=(10, 0))
         actions.columnconfigure(0, weight=1)
         actions.columnconfigure(1, weight=1)
         ttk.Button(actions, text="Preview Outputs", command=self._preview_convert_outputs).grid(row=0, column=0, sticky="ew")
@@ -347,13 +346,16 @@ class ConvertTabMixin:
 
     def _update_convert_space_controls(self) -> None:
         enabled = self._convert_space_var.get() == "subject_ras"
+        logger.debug(
+            "Update convert controls: use_viewer=%s space=%s",
+            bool(self._convert_use_viewer_pose_var.get()),
+            (self._convert_space_var.get() or "").strip(),
+        )
         if self._convert_use_viewer_pose_var.get():
             self._convert_subject_type_combo.configure(state="disabled")
             self._convert_pose_primary_combo.configure(state="disabled")
             self._convert_pose_secondary_combo.configure(state="disabled")
-            self._convert_flip_x_var.set(bool(self._affine_flip_x_var.get()))
-            self._convert_flip_y_var.set(bool(self._affine_flip_y_var.get()))
-            self._convert_flip_z_var.set(bool(self._affine_flip_z_var.get()))
+            self._sync_convert_with_viewer_orientation()
             self._convert_flip_x_check.configure(state="disabled")
             self._convert_flip_y_check.configure(state="disabled")
             self._convert_flip_z_check.configure(state="disabled")
@@ -366,6 +368,31 @@ class ConvertTabMixin:
         self._convert_flip_x_check.configure(state=flip_state)
         self._convert_flip_y_check.configure(state=flip_state)
         self._convert_flip_z_check.configure(state=flip_state)
+
+    def _sync_convert_with_viewer_orientation(self) -> None:
+        if not self._convert_use_viewer_pose_var.get():
+            return
+        subject_type = (self._subject_type_var.get() or "Biped").strip()
+        pose_primary = (self._pose_primary_var.get() or "Head").strip()
+        pose_secondary = (self._pose_secondary_var.get() or "Supine").strip()
+        flip_x = bool(self._affine_flip_x_var.get())
+        flip_y = bool(self._affine_flip_y_var.get())
+        flip_z = bool(self._affine_flip_z_var.get())
+        logger.debug(
+            "Sync convert with viewer orientation: type=%s pose=%s_%s flip=(%s,%s,%s)",
+            subject_type,
+            pose_primary,
+            pose_secondary,
+            flip_x,
+            flip_y,
+            flip_z,
+        )
+        self._convert_subject_type_var.set(subject_type)
+        self._convert_pose_primary_var.set(pose_primary)
+        self._convert_pose_secondary_var.set(pose_secondary)
+        self._convert_flip_x_var.set(flip_x)
+        self._convert_flip_y_var.set(flip_y)
+        self._convert_flip_z_var.set(flip_z)
 
     def _update_layout_controls(self) -> None:
         self._sync_layout_source_state()

@@ -154,6 +154,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._cache_max_items = None
         self._current_subject_type: Optional[str] = None
         self._current_subject_pose: Optional[str] = None
+        self._override_initialized = False
         self._view_error: Optional[str] = None
         self._extra_dim_vars: list[tk.IntVar] = []
         self._extra_dim_scales: list[tk.Scale] = []
@@ -258,6 +259,8 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._convert_preview_text: Optional[tk.Text] = None
         self._addon_output_payload: Optional[Any] = None
         self._layout_template_combo: Optional[ttk.Combobox] = None
+        self._subject_reset_button: Optional[ttk.Button] = None
+        self._subject_reset_tooltip: Optional[_Tooltip] = None
         self._layout_source_combo: Optional[ttk.Combobox] = None
         self._layout_auto_check: Optional[ttk.Checkbutton] = None
         self._addon_rule_file_combo: Optional[ttk.Combobox] = None
@@ -903,46 +906,127 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         viewer_top = ttk.Frame(viewer_tab)
         viewer_top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         viewer_top.columnconfigure(0, weight=1)
-        viewer_top_inner = ttk.Frame(viewer_top)
-        viewer_top_inner.grid(row=0, column=0)
+        viewer_top.columnconfigure(1, weight=1)
+        viewer_left_container = ttk.Frame(viewer_top, width=440)
+        viewer_left_container.grid(row=0, column=0, sticky="n", padx=(0, 8))
+        viewer_left_container.grid_propagate(False)
+        viewer_right_container = ttk.Frame(viewer_top, width=220)
+        viewer_right_container.grid(row=0, column=1, sticky="n", padx=(8, 0))
+        viewer_right_container.grid_propagate(False)
 
-        ttk.Label(viewer_top_inner, text="Space").pack(side=tk.LEFT, padx=(0, 10))
+        viewer_left = ttk.Frame(viewer_left_container)
+        viewer_left.place(relx=0.5, rely=0.0, anchor="n", width=440)
+        viewer_left.columnconfigure(1, weight=1, uniform="viewer_left_combo")
+        viewer_left.columnconfigure(2, weight=1, uniform="viewer_left_combo")
+
+        space_row = ttk.Frame(viewer_left)
+        space_row.grid(row=0, column=0, columnspan=4, pady=(0, 4), sticky="n")
+        ttk.Label(space_row, text="Space").pack(side=tk.LEFT, padx=(0, 10))
         for label, value in (("raw", "raw"), ("scanner", "scanner"), ("subject_ras", "subject_ras")):
             ttk.Radiobutton(
-                viewer_top_inner,
+                space_row,
                 text=label,
                 value=value,
                 variable=self._space_var,
                 command=self._on_space_change,
             ).pack(side=tk.LEFT, padx=(0, 10))
 
-        ttk.Label(viewer_top_inner, text="Subject Type").pack(side=tk.LEFT, padx=(18, 8))
+        ttk.Label(viewer_left, text="Subject Type").grid(row=1, column=0, sticky="w", padx=(0, 8))
         self._subject_type_combo = ttk.Combobox(
-            viewer_top_inner,
+            viewer_left,
             textvariable=self._subject_type_var,
             state="disabled",
             values=("Biped", "Quadruped", "Phantom", "Other", "OtherAnimal"),
-            width=12,
         )
-        self._subject_type_combo.pack(side=tk.LEFT)
+        self._subject_type_combo.grid(row=1, column=1, columnspan=2, sticky="ew")
 
-        ttk.Label(viewer_top_inner, text="Pose").pack(side=tk.LEFT, padx=(18, 8))
+        ttk.Label(viewer_left, text="Pose").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
         self._pose_primary_combo = ttk.Combobox(
-            viewer_top_inner,
+            viewer_left,
             textvariable=self._pose_primary_var,
             state="disabled",
             values=("Head", "Foot"),
-            width=8,
         )
-        self._pose_primary_combo.pack(side=tk.LEFT)
+        self._pose_primary_combo.grid(row=2, column=1, sticky="ew", pady=(6, 0))
         self._pose_secondary_combo = ttk.Combobox(
-            viewer_top_inner,
+            viewer_left,
             textvariable=self._pose_secondary_var,
             state="disabled",
             values=("Supine", "Prone", "Left", "Right"),
-            width=8,
         )
-        self._pose_secondary_combo.pack(side=tk.LEFT, padx=(8, 0))
+        self._pose_secondary_combo.grid(row=2, column=2, sticky="ew", padx=(8, 0), pady=(6, 0))
+
+        self._subject_reset_button = ttk.Button(
+            viewer_left,
+            text="RESET",
+            width=8,
+            command=self._on_subject_reset,
+        )
+        self._subject_reset_button.grid(row=1, column=3, rowspan=2, sticky="ns", padx=(12, 0), pady=(2, 0))
+        self._subject_reset_tooltip = _Tooltip(self._subject_reset_button, lambda: "Reset subject/pose")
+
+        viewer_right = ttk.Frame(viewer_right_container)
+        viewer_right.place(relx=0.5, rely=0.0, anchor="n", width=220)
+        viewer_right.columnconfigure(0, weight=1)
+
+        self._crosshair_check = ttk.Checkbutton(
+            viewer_right,
+            text="Crosshair",
+            variable=self._show_crosshair_var,
+            command=self._update_plot,
+        )
+        self._crosshair_check.grid(row=0, column=0, pady=(0, 4))
+
+        hook_box = ttk.Frame(viewer_right)
+        hook_box.grid(row=1, column=0, pady=(4, 4))
+        self._viewer_hook_frame = hook_box
+        self._viewer_hook_check = ttk.Checkbutton(
+            hook_box,
+            text="Hook",
+            variable=self._viewer_hook_enabled_var,
+            command=self._on_viewer_hook_toggle,
+        )
+        self._viewer_hook_check.pack(side=tk.LEFT, padx=(0, 6))
+        self._viewer_hook_label = ttk.Label(hook_box, textvariable=self._viewer_hook_name_var)
+        self._viewer_hook_label.pack(side=tk.LEFT)
+        hook_box.grid_remove()
+
+        zoom_row = ttk.Frame(viewer_right)
+        zoom_row.grid(row=2, column=0, pady=(4, 0))
+        ttk.Label(zoom_row, text="Zoom").pack(side=tk.LEFT, padx=(0, 4))
+        self._zoom_scale = tk.Scale(
+            zoom_row,
+            from_=1.0,
+            to=4.0,
+            resolution=0.25,
+            orient=tk.HORIZONTAL,
+            showvalue=True,
+            command=self._on_zoom_change,
+            length=110,
+        )
+        self._zoom_scale.pack(side=tk.LEFT)
+        self._zoom_scale.configure(variable=self._zoom_var)
+
+        def _resize_viewer_top(_event: Optional[tk.Event] = None) -> None:
+            width = max(viewer_top.winfo_width(), 1)
+            max_left = 440
+            max_right = 220
+            gap = 16
+            right_width = min(max_right, max(0, width // 3))
+            left_width = min(max_left, max(0, width - right_width - gap))
+            right_width = max(right_width, 1)
+            left_width = max(left_width, 1)
+            left_height = max(viewer_left.winfo_reqheight(), 1)
+            right_height = max(viewer_right.winfo_reqheight(), 1)
+            viewer_left_container.configure(width=left_width)
+            viewer_right_container.configure(width=right_width)
+            viewer_left_container.configure(height=left_height)
+            viewer_right_container.configure(height=right_height)
+            viewer_left.place_configure(width=left_width)
+            viewer_right.place_configure(width=right_width)
+
+        viewer_top.bind("<Configure>", _resize_viewer_top)
+        viewer_top.after(0, _resize_viewer_top)
 
         for combo in (self._subject_type_combo, self._pose_primary_combo, self._pose_secondary_combo):
             combo.bind("<<ComboboxSelected>>", self._on_subject_change)
@@ -950,17 +1034,18 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         preview_frame = ttk.Frame(viewer_tab, padding=(6, 6))
         preview_frame.grid(row=1, column=0, sticky="nsew")
         preview_frame.columnconfigure(0, weight=1)
-        preview_frame.rowconfigure(2, weight=1)
+        preview_frame.rowconfigure(1, weight=1)
 
-        slider_bar = ttk.Frame(preview_frame)
-        slider_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        slider_bar.columnconfigure(0, weight=1)
-        slider_inner = ttk.Frame(slider_bar)
-        slider_inner.grid(row=0, column=0)
+        axis_bar = ttk.Frame(preview_frame)
+        axis_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        axis_bar.columnconfigure(0, weight=1)
+        axis_bar.columnconfigure(1, weight=1)
+        axis_bar.columnconfigure(2, weight=1)
 
-        def _axis_box(axis: str, var: tk.IntVar, flip_var: tk.BooleanVar, on_change):
-            box = ttk.Frame(slider_inner)
-            box.pack(side=tk.LEFT, padx=(0, 6))
+        def _axis_box(parent: tk.Misc, axis: str, var: tk.IntVar, flip_var: tk.BooleanVar, on_change, column: int):
+            pad_x = (0, 6) if column < 2 else (0, 0)
+            box = ttk.Frame(parent)
+            box.grid(row=0, column=column, sticky="n", padx=pad_x)
             ttk.Checkbutton(
                 box,
                 text=f"Flip {axis}",
@@ -983,33 +1068,12 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             scale.configure(variable=var)
             return scale
 
-        self._x_scale = _axis_box("X", self._x_var, self._affine_flip_x_var, self._on_x_change)
-        self._y_scale = _axis_box("Y", self._y_var, self._affine_flip_y_var, self._on_y_change)
-        self._z_scale = _axis_box("Z", self._z_var, self._affine_flip_z_var, self._on_z_change)
-
-        ttk.Checkbutton(
-            slider_inner,
-            text="Crosshair",
-            variable=self._show_crosshair_var,
-            command=self._update_plot,
-        ).pack(side=tk.LEFT, padx=(14, 0))
-
-        ttk.Label(slider_inner, text="Zoom").pack(side=tk.LEFT, padx=(14, 4))
-        self._zoom_scale = tk.Scale(
-            slider_inner,
-            from_=1.0,
-            to=4.0,
-            resolution=0.25,
-            orient=tk.HORIZONTAL,
-            showvalue=True,
-            command=self._on_zoom_change,
-            length=110,
-        )
-        self._zoom_scale.pack(side=tk.LEFT)
-        self._zoom_scale.configure(variable=self._zoom_var)
+        self._y_scale = _axis_box(axis_bar, "Y", self._y_var, self._affine_flip_y_var, self._on_y_change, 0)
+        self._z_scale = _axis_box(axis_bar, "Z", self._z_var, self._affine_flip_z_var, self._on_z_change, 1)
+        self._x_scale = _axis_box(axis_bar, "X", self._x_var, self._affine_flip_x_var, self._on_x_change, 2)
 
         frame_bar = ttk.Frame(preview_frame)
-        frame_bar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        frame_bar.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         self._frame_bar = frame_bar
         frame_bar.columnconfigure(0, weight=1)
         frame_inner = ttk.Frame(frame_bar)
@@ -1035,7 +1099,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         frame_bar.grid_remove()
 
         self._viewer_host = ttk.Frame(preview_frame)
-        self._viewer_host.grid(row=2, column=0, sticky="nsew")
+        self._viewer_host.grid(row=1, column=0, sticky="nsew")
         self._viewer_host.columnconfigure(0, weight=1)
         self._viewer_host.rowconfigure(0, weight=1)
         self._set_viewer_widget(OrthogonalCanvas(self._viewer_host))
@@ -1043,19 +1107,6 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         bottom_bar = ttk.Frame(preview_frame)
         bottom_bar.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         bottom_bar.columnconfigure(0, weight=1)
-        hook_box = ttk.Frame(bottom_bar)
-        hook_box.grid(row=0, column=0, sticky="w")
-        self._viewer_hook_frame = hook_box
-        self._viewer_hook_check = ttk.Checkbutton(
-            hook_box,
-            text="Hook",
-            variable=self._viewer_hook_enabled_var,
-            command=self._on_viewer_hook_toggle,
-        )
-        self._viewer_hook_check.pack(side=tk.LEFT, padx=(0, 6))
-        self._viewer_hook_label = ttk.Label(hook_box, textvariable=self._viewer_hook_name_var)
-        self._viewer_hook_label.pack(side=tk.LEFT)
-        hook_box.grid_remove()
         slicepack_box = ttk.Frame(bottom_bar)
         slicepack_box.grid(row=0, column=1, sticky="e")
         self._slicepack_box = slicepack_box
@@ -1780,6 +1831,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return
         logger.debug("Loaded dataset with %d scan(s).", len(self._scan_ids))
         self._detach_converter_hooks()
+        self._reset_viewer_overrides_for_new_study()
 
         self._set_viewer_tab_state(True)
         self._set_dataset_controls_enabled(True)
@@ -1819,6 +1871,13 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if not out:
             return [path]
         return out
+
+    def _reset_viewer_overrides_for_new_study(self) -> None:
+        self._override_initialized = False
+        self._affine_flip_x_var.set(False)
+        self._affine_flip_y_var.set(False)
+        self._affine_flip_z_var.set(False)
+        self._sync_convert_with_viewer_orientation()
 
     def _populate_scan_list(self) -> None:
         if self._study is None:
@@ -1901,7 +1960,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return
         reco_id = reco_ids[int(selection[0])]
         self._current_reco_id = reco_id
-        self._preset_subject_defaults_from_reco(reco_id=reco_id)
+        if not self._override_initialized:
+            self._preset_subject_defaults_from_reco(reco_id=reco_id)
+            self._override_initialized = True
         self._update_space_controls()
         self._mark_viewer_dirty()
         self._maybe_load_viewer()
@@ -3941,12 +4002,15 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._subject_type_combo.configure(state=combo_state)
         self._pose_primary_combo.configure(state=combo_state)
         self._pose_secondary_combo.configure(state=combo_state)
+        if self._subject_reset_button is not None:
+            self._subject_reset_button.configure(state="normal" if enabled else "disabled")
 
     def _on_subject_change(self, *_: object) -> None:
         if self._space_var.get() != "subject_ras":
             return
         if self._current_reco_id is None:
             return
+        self._sync_convert_with_viewer_orientation()
         self._mark_viewer_dirty()
         self._maybe_load_viewer()
 
@@ -4004,13 +4068,19 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             subj_type, subj_pose = None, "Head_Supine"
         return subj_type, subj_pose or "Head_Supine"
 
-    def _preset_subject_defaults_from_reco(self, *, reco_id: int) -> None:
-        subj_type, subj_pose = self._infer_subject_type_pose_from_reco(reco_id=reco_id)
+    def _apply_subject_defaults(
+        self,
+        *,
+        subj_type: Optional[str],
+        subj_pose: str,
+        update_convert: bool,
+    ) -> None:
         self._current_subject_type = subj_type
         self._current_subject_pose = subj_pose
 
         self._subject_type_var.set(subj_type or "Biped")
-        self._convert_subject_type_var.set(subj_type or "Biped")
+        if update_convert:
+            self._convert_subject_type_var.set(subj_type or "Biped")
 
         if subj_pose and "_" in subj_pose:
             primary, secondary = subj_pose.split("_", 1)
@@ -4018,8 +4088,24 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             primary, secondary = "Head", "Supine"
         self._pose_primary_var.set(primary or "Head")
         self._pose_secondary_var.set(secondary or "Supine")
-        self._convert_pose_primary_var.set(primary or "Head")
-        self._convert_pose_secondary_var.set(secondary or "Supine")
+        if update_convert:
+            self._convert_pose_primary_var.set(primary or "Head")
+            self._convert_pose_secondary_var.set(secondary or "Supine")
+        self._sync_convert_with_viewer_orientation()
+
+    def _preset_subject_defaults_from_reco(self, *, reco_id: int) -> None:
+        subj_type, subj_pose = self._infer_subject_type_pose_from_reco(reco_id=reco_id)
+        self._apply_subject_defaults(subj_type=subj_type, subj_pose=subj_pose, update_convert=True)
+
+    def _on_subject_reset(self) -> None:
+        if self._current_reco_id is None:
+            return
+        subj_type, subj_pose = self._infer_subject_type_pose_from_reco(reco_id=self._current_reco_id)
+        self._apply_subject_defaults(subj_type=subj_type, subj_pose=subj_pose, update_convert=False)
+        self._override_initialized = True
+        if self._space_var.get() == "subject_ras":
+            self._mark_viewer_dirty()
+            self._maybe_load_viewer()
 
     def _resolve_affine_for_space(self, *, reco_id: int) -> Optional[Any]:
         if self._scan is None:
@@ -4109,6 +4195,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return self._scan.get_affine(reco_id=reco_id)
 
     def _on_affine_change(self) -> None:
+        self._sync_convert_with_viewer_orientation()
         self._maybe_load_viewer()
 
     @staticmethod
