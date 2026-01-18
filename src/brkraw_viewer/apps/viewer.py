@@ -140,7 +140,6 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         viewer_cfg = load_viewer_config()
         cache_cfg = viewer_cfg.get("cache", {}) if isinstance(viewer_cfg, dict) else {}
         self._cache_enabled = bool(cache_cfg.get("enabled", True))
-        self._cache_prompt_on_close = bool(cache_cfg.get("prompt_on_close", True))
         max_items_raw = cache_cfg.get("max_items", None)
         if isinstance(max_items_raw, bool):
             self._cache_max_items = None
@@ -4437,14 +4436,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._maybe_load_viewer()
 
     def _on_close(self) -> None:
-        if self._cache_enabled and self._cache_prompt_on_close and self._data_cache:
-            try:
-                from tkinter import messagebox
-
-                if messagebox.askyesno("BrkRaw Viewer", "Clear cached data before closing?"):
-                    self._clear_data_cache()
-            except Exception:
-                pass
+        self._clear_data_cache()
         self.destroy()
 
     def _apply_slicepack(self, index: int) -> None:
@@ -4690,7 +4682,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return None
         data = self._data
         if data.ndim > 3:
-            slicer = [slice(None)] * data.ndim
+            slicer: list[slice | int] = [slice(None)] * data.ndim
             frame_axis = 3
             frame = int(self._frame_var.get())
             frame_size = data.shape[frame_axis]
