@@ -189,29 +189,48 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._pose_secondary_var = tk.StringVar(value="Supine")
         self._rule_text_var = tk.StringVar(value="Rule: auto")
         self._rule_enabled_var = tk.BooleanVar(value=True)
-        self._rule_name_var = tk.StringVar(value="None")
         self._rule_match_var = tk.StringVar(value="None")
-        self._addon_rule_file_var = tk.StringVar(value="")
         self._addon_rule_file_map: Dict[str, str] = {}
         self._addon_rule_display_by_path: Dict[str, str] = {}
         self._addon_rule_session_files: List[str] = []
-        self._addon_rule_auto_var = tk.BooleanVar(value=True)
-        self._addon_rule_category_var = tk.StringVar(value="None")
-        self._addon_rule_desc_var = tk.StringVar(value="")
-        self._addon_rule_status_var = tk.StringVar(value="skipped")
-        self._addon_rule_choices: Dict[str, Dict[str, Any]] = {}
-
-        self._addon_spec_auto_var = tk.BooleanVar(value=True)
-        self._addon_spec_file_var = tk.StringVar(value="")
-        self._addon_spec_name_var = tk.StringVar(value="None")
-        self._addon_spec_desc_var = tk.StringVar(value="")
-        self._addon_spec_status_var = tk.StringVar(value="skipped")
+        self._addon_rule_categories = ("info_spec", "metadata_spec", "converter_hook")
+        self._addon_spec_categories = ("info_spec", "metadata_spec")
+        self._addon_rule_sections: Dict[str, Dict[str, Any]] = {}
+        self._addon_spec_sections: Dict[str, Dict[str, Any]] = {}
+        self._addon_rule_choices_by_category: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for category in self._addon_rule_categories:
+            self._addon_rule_sections[category] = {
+                "file_var": tk.StringVar(value=""),
+                "name_var": tk.StringVar(value="None"),
+                "auto_var": tk.BooleanVar(value=True),
+                "desc_var": tk.StringVar(value=""),
+                "status_var": tk.StringVar(value="skipped"),
+                "file_combo": None,
+                "combo": None,
+                "browse_button": None,
+                "new_button": None,
+                "desc_tooltip": None,
+            }
+            self._addon_rule_choices_by_category[category] = {}
+        for category in self._addon_spec_categories:
+            self._addon_spec_sections[category] = {
+                "auto_var": tk.BooleanVar(value=True),
+                "file_var": tk.StringVar(value=""),
+                "name_var": tk.StringVar(value="None"),
+                "desc_var": tk.StringVar(value=""),
+                "status_var": tk.StringVar(value="skipped"),
+                "combo": None,
+                "browse_button": None,
+                "new_button": None,
+                "name_entry": None,
+                "desc_tooltip": None,
+            }
         self._addon_spec_choices: Dict[str, Dict[str, Any]] = {}
         self._addon_spec_display_by_path: Dict[str, str] = {}
         self._addon_spec_session_files: List[str] = []
 
         self._addon_context_map_var = tk.StringVar(value="")
-        self._addon_context_status_var = tk.StringVar(value="skipped")
+        self._addon_context_status_var = tk.StringVar(value="")
         self._param_scope_var = tk.StringVar(value="all")
         self._param_query_var = tk.StringVar(value="")
 
@@ -262,11 +281,6 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._subject_reset_tooltip: Optional[_Tooltip] = None
         self._layout_source_combo: Optional[ttk.Combobox] = None
         self._layout_auto_check: Optional[ttk.Checkbutton] = None
-        self._addon_rule_file_combo: Optional[ttk.Combobox] = None
-        self._addon_rule_browse_button: Optional[ttk.Button] = None
-        self._addon_rule_new_button: Optional[ttk.Button] = None
-        self._addon_rule_file_combo: Optional[ttk.Combobox] = None
-        self._addon_rule_desc_tooltip: Optional[_Tooltip] = None
         self._addon_transform_file_var = tk.StringVar(value="")
         self._addon_transform_file_map: Dict[str, str] = {}
         self._addon_transform_display_by_path: Dict[str, str] = {}
@@ -275,8 +289,6 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._addon_transform_browse_button: Optional[ttk.Button] = None
         self._addon_transform_new_button: Optional[ttk.Button] = None
         self._addon_transform_edit_button: Optional[ttk.Button] = None
-        self._addon_spec_name_entry: Optional[ttk.Entry] = None
-        self._addon_spec_desc_tooltip: Optional[_Tooltip] = None
 
         self._registry_window: Optional[tk.Toplevel] = None
         self._registry_add_menu: Optional[tk.Menu] = None
@@ -296,8 +308,6 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._subject_summary_entries: list[ttk.Entry] = []
         self._subject_button: Optional[ttk.Button] = None
         self._refresh_button: Optional[ttk.Button] = None
-        self._addon_spec_browse_button: Optional[ttk.Button] = None
-        self._addon_spec_new_button: Optional[ttk.Button] = None
         self._addon_context_new_button: Optional[ttk.Button] = None
         self._params_tree: Optional[ttk.Treeview] = None
         self._params_sort_key: Optional[str] = None
@@ -337,7 +347,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._status_var.set("Opening…")
             self.after(250, lambda: self._load_path_with_spinner(path, scan_id=scan_id, reco_id=reco_id))
         else:
-            self._status_var.set("Open a study folder, zip, or PvDatasets package to begin.")
+            self._status_var.set("Open a study folder or archive to begin.")
 
     def _load_path_with_spinner(
         self,
@@ -763,7 +773,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
         load_button = ttk.Menubutton(top, text="Load")
         load_menu = tk.Menu(load_button, tearoff=False)
-        load_menu.add_command(label="Folder (Study / .PvDatasets)…", command=self._choose_dir)
+        load_menu.add_command(label="Folder (Study)…", command=self._choose_dir)
         load_menu.add_command(label="Archive File (.zip / .PvDatasets)…", command=self._choose_file)
         load_button.configure(menu=load_menu)
         load_button.pack(side=tk.LEFT, padx=(0, 6))
@@ -1130,74 +1140,191 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         addon_tab.columnconfigure(0, weight=1)
         addon_tab.columnconfigure(1, weight=1)
         addon_tab.rowconfigure(0, weight=1)
-        addon_tab.rowconfigure(1, weight=1)
+        small_button_width = 3
 
-        top_left = ttk.Frame(addon_tab, padding=(6, 6))
-        top_left.grid(row=0, column=0, sticky="nsew")
-        top_left.columnconfigure(0, weight=1)
+        left_container = ttk.Frame(addon_tab, padding=(6, 6))
+        left_container.grid(row=0, column=0, sticky="n", padx=(6, 4), pady=(6, 6))
+        left_container.grid_propagate(False)
+        left_container.columnconfigure(0, weight=1)
 
-        top_right = ttk.Frame(addon_tab, padding=(6, 6))
-        top_right.grid(row=0, column=1, sticky="nsew")
-        top_right.columnconfigure(0, weight=1)
-        top_right.rowconfigure(0, weight=1)
+        right_container = ttk.Frame(addon_tab, padding=(6, 6))
+        right_container.grid(row=0, column=1, sticky="n", padx=(4, 6), pady=(6, 6))
+        right_container.grid_propagate(False)
+        right_container.columnconfigure(0, weight=1)
 
-        bottom_left = ttk.Frame(addon_tab, padding=(6, 6))
-        bottom_left.grid(row=1, column=0, sticky="nsew")
-        bottom_left.columnconfigure(0, weight=1)
+        left_stack = ttk.Frame(left_container)
+        left_stack.grid(row=0, column=0, sticky="ew")
+        left_stack.columnconfigure(0, weight=1)
 
-        bottom_right = ttk.Frame(addon_tab, padding=(6, 6))
-        bottom_right.grid(row=1, column=1, sticky="nsew")
-        bottom_right.columnconfigure(0, weight=1)
-        bottom_right.rowconfigure(2, weight=1)
+        right_stack = ttk.Frame(right_container)
+        right_stack.grid(row=0, column=0, sticky="nsew")
+        right_stack.columnconfigure(0, weight=1)
+        right_stack.grid_propagate(False)
+        right_stack.rowconfigure(0, weight=3)
+        right_stack.rowconfigure(2, weight=1)
 
-        rule_frame = ttk.LabelFrame(top_left, text="Rule", padding=(8, 8))
-        rule_frame.grid(row=0, column=0, sticky="ew")
-        rule_frame.columnconfigure(1, weight=1)
+        def _build_rule_spec_section(parent: tk.Misc, category: str) -> None:
+            section = ttk.Frame(parent, padding=(8, 8))
+            section.grid(row=0, column=0, sticky="ew")
+            section.columnconfigure(0, weight=1)
 
-        ttk.Label(rule_frame, text="file").grid(row=0, column=0, sticky="w")
-        self._addon_rule_file_combo = ttk.Combobox(
-            rule_frame,
-            textvariable=self._addon_rule_file_var,
-            state="readonly",
-            values=("None",),
-        )
-        self._addon_rule_file_combo.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 6))
-        self._addon_rule_file_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_rule_file_selected())
-        self._addon_rule_browse_button = ttk.Button(rule_frame, text="Browse", command=self._browse_rule_file)
-        self._addon_rule_browse_button.grid(row=0, column=3, sticky="e")
-        self._addon_rule_new_button = ttk.Button(rule_frame, text="New", command=self._new_rule_file)
+            rule_frame = ttk.LabelFrame(section, text="Rule", padding=(6, 6))
+            rule_frame.grid(row=0, column=0, sticky="ew")
+            rule_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(rule_frame, text="name").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        name_row = ttk.Frame(rule_frame)
-        name_row.grid(row=1, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(8, 0))
-        name_row.columnconfigure(0, weight=1)
-        self._addon_rule_combo = ttk.Combobox(
-            name_row,
-            textvariable=self._rule_name_var,
-            state="readonly",
-            values=("None",),
-        )
-        self._addon_rule_combo.grid(row=0, column=0, sticky="ew")
-        self._addon_rule_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_rule_selected())
-        ttk.Checkbutton(
-            name_row,
-            text="Auto",
-            variable=self._addon_rule_auto_var,
-            command=self._on_rule_auto_toggle,
-        ).grid(row=0, column=1, sticky="e", padx=(8, 0))
-        self._addon_rule_desc_tooltip = _Tooltip(self._addon_rule_combo, lambda: self._addon_rule_desc_var.get())
+            rule_state = self._addon_rule_sections[category]
+            ttk.Label(rule_frame, text="file").grid(row=0, column=0, sticky="w")
+            rule_state["file_combo"] = ttk.Combobox(
+                rule_frame,
+                textvariable=rule_state["file_var"],
+                state="readonly",
+                values=("None",),
+            )
+            rule_state["file_combo"].grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 6))
+            rule_state["file_combo"].bind(
+                "<<ComboboxSelected>>",
+                lambda *_: self._on_rule_file_selected(category),
+            )
+            rule_state["browse_button"] = ttk.Button(
+                rule_frame,
+                text="Browse",
+                command=lambda: self._browse_rule_file(category),
+            )
+            rule_state["browse_button"].grid(row=0, column=3, sticky="e")
 
-        ttk.Label(rule_frame, text="category").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        ttk.Entry(rule_frame, textvariable=self._addon_rule_category_var, state="readonly").grid(
-            row=2, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(8, 0)
-        )
+            ttk.Label(rule_frame, text="name").grid(row=1, column=0, sticky="w", pady=(8, 0))
+            name_row = ttk.Frame(rule_frame)
+            name_row.grid(row=1, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(8, 0))
+            name_row.columnconfigure(0, weight=1)
+            rule_state["combo"] = ttk.Combobox(
+                name_row,
+                textvariable=rule_state["name_var"],
+                state="readonly",
+                values=("None",),
+            )
+            rule_state["combo"].grid(row=0, column=0, sticky="ew")
+            rule_state["combo"].bind("<<ComboboxSelected>>", lambda *_: self._on_rule_selected(category))
+            ttk.Checkbutton(
+                name_row,
+                text="Auto",
+                variable=rule_state["auto_var"],
+                command=lambda: self._on_rule_auto_toggle(category),
+            ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+            rule_state["desc_tooltip"] = _Tooltip(rule_state["combo"], lambda: rule_state["desc_var"].get())
 
-        ttk.Label(rule_frame, text="status").grid(row=3, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(rule_frame, textvariable=self._addon_rule_status_var).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-        self._addon_rule_new_button.grid(row=3, column=2, sticky="e", padx=(0, 6), pady=(8, 0))
-        ttk.Button(rule_frame, text="Edit", command=self._edit_rule_file).grid(row=3, column=3, sticky="e", pady=(8, 0))
+            ttk.Label(rule_frame, text="status").grid(row=2, column=0, sticky="w", pady=(8, 0))
+            ttk.Label(rule_frame, textvariable=rule_state["status_var"]).grid(
+                row=2,
+                column=1,
+                sticky="w",
+                padx=(8, 0),
+                pady=(8, 0),
+            )
+            rule_buttons = ttk.Frame(rule_frame)
+            rule_buttons.grid(row=2, column=2, columnspan=2, sticky="e", pady=(8, 0))
+            rule_state["new_button"] = ttk.Button(
+                rule_buttons,
+                text="New",
+                width=small_button_width,
+                command=lambda: self._new_rule_file(category),
+            )
+            rule_state["new_button"].pack(side=tk.LEFT)
+            ttk.Button(
+                rule_buttons,
+                text="Edit",
+                width=small_button_width,
+                command=lambda: self._edit_rule_file(category),
+            ).pack(side=tk.LEFT, padx=(6, 0))
 
-        transform_frame = ttk.LabelFrame(top_left, text="Transform", padding=(8, 8))
+            spec_frame = ttk.LabelFrame(section, text="Spec", padding=(6, 6))
+            spec_frame.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+            spec_frame.columnconfigure(1, weight=1)
+
+            if category not in self._addon_spec_sections:
+                ttk.Label(spec_frame, text="Not applicable for converter hooks.").grid(
+                    row=0,
+                    column=0,
+                    columnspan=4,
+                    sticky="w",
+                )
+                return
+
+            spec_state = self._addon_spec_sections[category]
+            ttk.Checkbutton(
+                spec_frame,
+                text="Follow applied rule for spec selection",
+                variable=spec_state["auto_var"],
+                command=lambda: self._on_spec_auto_toggle(category),
+            ).grid(row=0, column=0, columnspan=4, sticky="w")
+
+            ttk.Label(spec_frame, text="file").grid(row=1, column=0, sticky="w", pady=(8, 0))
+            spec_state["combo"] = ttk.Combobox(
+                spec_frame,
+                textvariable=spec_state["file_var"],
+                state="readonly",
+                values=("None",),
+            )
+            spec_state["combo"].grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 6), pady=(8, 0))
+            spec_state["combo"].bind("<<ComboboxSelected>>", lambda *_: self._on_spec_file_selected(category))
+            spec_state["browse_button"] = ttk.Button(
+                spec_frame,
+                text="Browse",
+                command=lambda: self._browse_spec_file(category),
+            )
+            spec_state["browse_button"].grid(row=1, column=3, sticky="e", pady=(8, 0))
+
+            ttk.Label(spec_frame, text="name").grid(row=2, column=0, sticky="w", pady=(8, 0))
+            spec_state["name_entry"] = ttk.Entry(spec_frame, textvariable=spec_state["name_var"], state="readonly")
+            spec_state["name_entry"].grid(row=2, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(8, 0))
+            spec_state["desc_tooltip"] = _Tooltip(
+                spec_state["name_entry"],
+                lambda: spec_state["desc_var"].get(),
+            )
+
+            ttk.Label(spec_frame, text="status").grid(row=3, column=0, sticky="w", pady=(8, 0))
+            ttk.Label(spec_frame, textvariable=spec_state["status_var"]).grid(
+                row=3,
+                column=1,
+                sticky="w",
+                padx=(8, 0),
+                pady=(8, 0),
+            )
+            spec_buttons = ttk.Frame(spec_frame)
+            spec_buttons.grid(row=3, column=2, columnspan=2, sticky="e", pady=(8, 0))
+            spec_state["new_button"] = ttk.Button(
+                spec_buttons,
+                text="New",
+                width=small_button_width,
+                command=lambda: self._new_spec_file(category),
+            )
+            spec_state["new_button"].pack(side=tk.LEFT)
+            ttk.Button(
+                spec_buttons,
+                text="Edit",
+                width=small_button_width,
+                command=lambda: self._edit_spec_file(category),
+            ).pack(side=tk.LEFT, padx=(6, 0))
+
+            ttk.Button(
+                spec_frame,
+                text="Apply Spec",
+                command=lambda: self._apply_selected_spec(category),
+            ).grid(row=4, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+
+        spec_tabs = ttk.Notebook(left_stack)
+        spec_tabs.grid(row=0, column=0, sticky="ew")
+        left_stack.columnconfigure(0, weight=1)
+        for category, title in (
+            ("info_spec", "Info"),
+            ("metadata_spec", "Metadata"),
+            ("converter_hook", "Hook"),
+        ):
+            tab = ttk.Frame(spec_tabs)
+            tab.columnconfigure(0, weight=1)
+            spec_tabs.add(tab, text=title)
+            _build_rule_spec_section(tab, category)
+
+        transform_frame = ttk.LabelFrame(left_stack, text="Transform", padding=(8, 8))
         transform_frame.grid(row=1, column=0, sticky="ew", pady=(10, 0))
         transform_frame.columnconfigure(1, weight=1)
 
@@ -1212,71 +1339,24 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._addon_transform_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_transform_file_selected())
         self._addon_transform_browse_button = ttk.Button(transform_frame, text="Browse", command=self._browse_transform_file)
         self._addon_transform_browse_button.grid(row=0, column=3, sticky="e")
-        self._addon_transform_new_button = ttk.Button(transform_frame, text="New", command=self._new_transform_file)
-
-        self._addon_transform_edit_button = ttk.Button(transform_frame, text="Edit", command=self._edit_transform_file)
-        self._addon_transform_edit_button.grid(row=1, column=3, sticky="e", pady=(8, 0))
-        self._addon_transform_new_button.grid(row=1, column=2, sticky="e", padx=(0, 6), pady=(8, 0))
-
-        spec_frame = ttk.LabelFrame(bottom_left, text="Spec", padding=(8, 8))
-        spec_frame.grid(row=0, column=0, sticky="nsew")
-        spec_frame.columnconfigure(1, weight=1)
-
-        ttk.Checkbutton(
-            spec_frame,
-            text="Follow applied rule for spec selection",
-            variable=self._addon_spec_auto_var,
-            command=self._on_spec_auto_toggle,
-        ).grid(row=0, column=0, columnspan=4, sticky="w")
-
-        ttk.Label(spec_frame, text="file").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        self._addon_spec_combo = ttk.Combobox(
-            spec_frame,
-            textvariable=self._addon_spec_file_var,
-            state="readonly",
-            values=("None",),
+        transform_buttons = ttk.Frame(transform_frame)
+        transform_buttons.grid(row=1, column=2, columnspan=2, sticky="e", pady=(8, 0))
+        self._addon_transform_new_button = ttk.Button(
+            transform_buttons,
+            text="New",
+            width=small_button_width,
+            command=self._new_transform_file,
         )
-        self._addon_spec_combo.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 6), pady=(8, 0))
-        self._addon_spec_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_spec_file_selected())
-        self._addon_spec_browse_button = ttk.Button(spec_frame, text="Browse", command=self._browse_spec_file)
-        self._addon_spec_browse_button.grid(row=1, column=3, sticky="e", pady=(8, 0))
-        self._addon_spec_new_button = ttk.Button(spec_frame, text="New", command=self._new_spec_file)
-
-        ttk.Label(spec_frame, text="name").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        self._addon_spec_name_entry = ttk.Entry(spec_frame, textvariable=self._addon_spec_name_var, state="readonly")
-        self._addon_spec_name_entry.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(8, 0))
-        self._addon_spec_desc_tooltip = _Tooltip(self._addon_spec_name_entry, lambda: self._addon_spec_desc_var.get())
-
-        ttk.Label(spec_frame, text="status").grid(row=3, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(spec_frame, textvariable=self._addon_spec_status_var).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-        self._addon_spec_new_button.grid(row=3, column=2, sticky="e", padx=(0, 6), pady=(8, 0))
-        ttk.Button(spec_frame, text="Edit", command=self._edit_spec_file).grid(row=3, column=3, sticky="e", pady=(8, 0))
-
-        ttk.Button(spec_frame, text="Apply Spec", command=self._apply_selected_spec).grid(
-            row=4, column=0, columnspan=4, sticky="ew", pady=(10, 0)
+        self._addon_transform_new_button.pack(side=tk.LEFT)
+        self._addon_transform_edit_button = ttk.Button(
+            transform_buttons,
+            text="Edit",
+            width=small_button_width,
+            command=self._edit_transform_file,
         )
+        self._addon_transform_edit_button.pack(side=tk.LEFT, padx=(6, 0))
 
-        map_frame = ttk.LabelFrame(bottom_right, text="Context Map", padding=(8, 8))
-        map_frame.grid(row=0, column=0, sticky="ew")
-        map_frame.columnconfigure(1, weight=1)
-
-        ttk.Label(map_frame, text="path").grid(row=0, column=0, sticky="w")
-        ttk.Entry(map_frame, textvariable=self._addon_context_map_var, state="readonly").grid(
-            row=0, column=1, columnspan=2, sticky="ew", padx=(8, 6)
-        )
-        ttk.Button(map_frame, text="Open", command=self._browse_context_map).grid(row=0, column=3, sticky="e")
-        self._addon_context_new_button = ttk.Button(map_frame, text="New", command=self._new_context_map)
-
-        ttk.Label(map_frame, text="status").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(map_frame, textvariable=self._addon_context_status_var).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(8, 0))
-        self._addon_context_new_button.grid(row=1, column=2, sticky="e", padx=(0, 6), pady=(8, 0))
-        ttk.Button(map_frame, text="Edit", command=self._edit_context_map).grid(row=1, column=3, sticky="e", pady=(8, 0))
-
-        ttk.Button(map_frame, text="Apply Context Map", command=self._apply_context_map).grid(
-            row=2, column=0, columnspan=4, sticky="ew", pady=(10, 0)
-        )
-
-        output_frame = ttk.LabelFrame(top_right, text="Output", padding=(8, 8))
+        output_frame = ttk.LabelFrame(right_stack, text="Output", padding=(8, 8))
         output_frame.grid(row=0, column=0, sticky="nsew")
         output_frame.columnconfigure(0, weight=1)
         output_frame.rowconfigure(0, weight=1)
@@ -1288,12 +1368,70 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._info_output_text.configure(yscrollcommand=info_scroll.set)
         self._info_output_text.configure(state=tk.DISABLED)
 
-        output_actions = ttk.Frame(bottom_right)
+        output_actions = ttk.Frame(right_stack)
         output_actions.grid(row=1, column=0, sticky="e", pady=(10, 0))
         ttk.Button(output_actions, text="Reset", command=self._reset_addon_state).pack(side=tk.LEFT)
         ttk.Button(output_actions, text="Save As", command=self._save_addon_output).pack(side=tk.LEFT, padx=(8, 0))
 
-        ttk.Frame(bottom_right).grid(row=2, column=0, sticky="nsew")
+        context_container = ttk.Frame(right_stack)
+        context_container.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
+        context_container.columnconfigure(0, weight=1)
+        context_container.grid_anchor("n")
+        context_inner = ttk.Frame(context_container)
+        context_inner.grid(row=0, column=0, sticky="ew")
+        context_inner.columnconfigure(0, weight=1)
+
+        map_frame = ttk.LabelFrame(context_inner, text="Context Map", padding=(8, 8))
+        map_frame.grid(row=0, column=0, sticky="ew")
+
+        path_row = ttk.Frame(map_frame)
+        path_row.pack(fill="x")
+        path_row.columnconfigure(1, weight=1)
+        ttk.Label(path_row, text="path").grid(row=0, column=0, sticky="w")
+        ttk.Entry(path_row, textvariable=self._addon_context_map_var, state="readonly").grid(
+            row=0, column=1, sticky="ew", padx=(8, 6)
+        )
+        ttk.Button(path_row, text="Open", command=self._browse_context_map).grid(row=0, column=2, sticky="e")
+
+        status_row = ttk.Frame(map_frame)
+        status_row.pack(fill="x", pady=(8, 0))
+        status_row.columnconfigure(2, weight=1)
+        ttk.Label(status_row, textvariable=self._addon_context_status_var).grid(row=0, column=0, sticky="w")
+        status_buttons = ttk.Frame(status_row)
+        status_buttons.grid(row=0, column=3, sticky="e")
+        self._addon_context_new_button = ttk.Button(
+            status_buttons,
+            text="New",
+            width=small_button_width,
+            command=self._new_context_map,
+        )
+        self._addon_context_new_button.pack(side=tk.LEFT)
+        ttk.Button(
+            status_buttons,
+            text="Edit",
+            width=small_button_width,
+            command=self._edit_context_map,
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
+        ttk.Button(map_frame, text="Apply Context Map", command=self._apply_context_map).pack(
+            fill="x", pady=(10, 0)
+        )
+
+        def _resize_addon_layout(_event: Optional[tk.Event] = None) -> None:
+            width = max(addon_tab.winfo_width(), 1)
+            left_width = 350
+            max_right = 500
+            min_right = 220
+            gap = 16
+            right_width = min(max_right, max(min_right, width - left_width - gap))
+            left_height = max(left_stack.winfo_reqheight(), 1)
+            right_height = left_height
+            left_container.configure(width=left_width, height=left_height)
+            right_container.configure(width=right_width, height=right_height)
+            right_stack.configure(width=right_width, height=right_height)
+
+        addon_tab.bind("<Configure>", _resize_addon_layout)
+        addon_tab.after(0, _resize_addon_layout)
 
         return addon_tab
 
@@ -1435,7 +1573,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         add_button = ttk.Menubutton(toolbar, text="+", width=3)
         add_menu = tk.Menu(add_button, tearoff=False)
         add_menu.add_command(label="Current session", command=self._registry_add_current_session)
-        add_menu.add_command(label="Folder (Study / .PvDatasets)…", command=self._registry_add_folder)
+        add_menu.add_command(label="Folder (Study)…", command=self._registry_add_folder)
         add_menu.add_command(label="Archive File (.zip / .PvDatasets)…", command=self._registry_add_archive)
         add_button.configure(menu=add_menu)
         add_button.pack(side=tk.LEFT)
@@ -2111,12 +2249,14 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
     def _refresh_addon_controls(self) -> None:
         self._refresh_rule_files()
-        self._on_rule_auto_toggle()
         self._refresh_transform_files()
         self._refresh_spec_choices()
-        self._on_spec_auto_toggle()
-        self._update_rule_details()
-        self._update_spec_details()
+        for category in self._addon_rule_categories:
+            self._on_rule_auto_toggle(category)
+            self._update_rule_details(category)
+        for category in self._addon_spec_categories:
+            self._on_spec_auto_toggle(category)
+            self._update_spec_details(category)
         self._update_layout_controls()
 
     def _refresh_param_controls(self) -> None:
@@ -2161,14 +2301,16 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._addon_rule_display_by_path[path] = path
 
         values = sorted(self._addon_rule_file_map.keys()) if self._addon_rule_file_map else ["None"]
-        if self._addon_rule_file_combo is not None:
-            self._addon_rule_file_combo.configure(values=values)
-        current = (self._addon_rule_file_var.get() or "").strip()
-        if current in ("", "None") and values:
-            self._addon_rule_file_var.set(values[0])
-        path = self._resolve_rule_file_selection(self._addon_rule_file_var.get())
-        self._load_rule_file(path)
-        self._apply_rule_combo_state()
+        for category, rule_state in self._addon_rule_sections.items():
+            file_combo = rule_state.get("file_combo")
+            if file_combo is not None:
+                file_combo.configure(values=values)
+            current = (rule_state["file_var"].get() or "").strip()
+            if current in ("", "None") and values:
+                rule_state["file_var"].set(values[0])
+            path = self._resolve_rule_file_selection(rule_state["file_var"].get())
+            self._load_rule_file(category, path)
+            self._apply_rule_combo_state(category)
 
     def _resolve_rule_file_selection(self, selection: str) -> Optional[str]:
         if not selection or selection == "None":
@@ -2274,15 +2416,17 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return
         self._open_text_editor(path=Path(path), title="Edit transform")
 
-    def _load_rule_file(self, path: Optional[str]) -> None:
+    def _load_rule_file(self, category: str, path: Optional[str]) -> None:
+        rule_state = self._addon_rule_sections[category]
         if not path:
-            self._addon_rule_choices = {}
-            self._rule_name_var.set("None")
-            self._addon_rule_combo.configure(values=("None",))
-            self._addon_rule_status_var.set("skipped")
-            self._addon_rule_category_var.set("None")
-            self._set_rule_description("")
-            self._apply_rule_combo_state()
+            self._addon_rule_choices_by_category[category] = {}
+            rule_state["name_var"].set("None")
+            combo = rule_state.get("combo")
+            if combo is not None:
+                combo.configure(values=("None",))
+            rule_state["status_var"].set("skipped")
+            rule_state["desc_var"].set("")
+            self._apply_rule_combo_state(category)
             return
         try:
             data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
@@ -2298,7 +2442,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         except Exception as exc:
             messagebox.showerror("Rule", f"Rule validation failed:\n{exc}")
         choices: Dict[str, Dict[str, Any]] = {}
-        for category, items in data.items():
+        for cat, items in data.items():
             if not isinstance(items, list):
                 continue
             for item in items:
@@ -2307,131 +2451,140 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 name = str(item.get("name") or "Unnamed")
                 display = name
                 rule = dict(item)
-                rule["__category__"] = category
-                choices[display] = rule
-        self._addon_rule_choices = choices
+                rule["__category__"] = cat
+                if category == str(rule["__category__"]):
+                    choices[display] = rule
+        self._addon_rule_choices_by_category[category] = choices
         values = sorted(choices.keys()) if choices else ["None"]
-        self._addon_rule_combo.configure(values=values)
+        combo = rule_state.get("combo")
+        if combo is not None:
+            combo.configure(values=values)
         if values:
-            self._rule_name_var.set(values[0])
-        self._update_rule_details()
-        self._apply_rule_combo_state()
+            rule_state["name_var"].set(values[0])
+        self._update_rule_details(category)
+        self._apply_rule_combo_state(category)
 
-    def _set_rule_description(self, text: str) -> None:
-        self._addon_rule_desc_var.set(text)
+    def _set_rule_description(self, category: str, text: str) -> None:
+        rule_state = self._addon_rule_sections[category]
+        rule_state["desc_var"].set(text)
 
-    def _update_rule_details(self) -> None:
-        display = (self._rule_name_var.get() or "").strip()
-        rule = self._addon_rule_choices.get(display)
+    def _update_rule_details(self, category: str) -> None:
+        rule_state = self._addon_rule_sections[category]
+        display = (rule_state["name_var"].get() or "").strip()
+        rule = self._addon_rule_choices_by_category.get(category, {}).get(display)
         if rule is None:
-            self._addon_rule_category_var.set("None")
-            self._addon_rule_status_var.set("skipped")
-            self._set_rule_description("")
+            rule_state["status_var"].set("skipped")
+            self._set_rule_description(category, "")
             return
-        category = str(rule.get("__category__", ""))
-        self._addon_rule_category_var.set(category or "None")
-        self._set_rule_description(str(rule.get("description") or ""))
+        self._set_rule_description(category, str(rule.get("description") or ""))
         status = "skipped"
         if self._scan is not None:
             match = self._resolve_rule_match(category, rule)
             status = "applied" if match else "skipped"
-        self._addon_rule_status_var.set(status)
-        if self._addon_spec_auto_var.get():
-            self._update_spec_details()
-        self._apply_rule_to_output()
+        rule_state["status_var"].set(status)
+        if category in self._addon_spec_sections and self._addon_spec_sections[category]["auto_var"].get():
+            self._update_spec_details(category)
+        self._apply_rule_to_output(category)
 
-    def _apply_rule_to_output(self) -> None:
-        display = (self._rule_name_var.get() or "").strip()
-        rule = self._addon_rule_choices.get(display)
+    def _apply_rule_to_output(self, category: str) -> None:
+        rule_state = self._addon_rule_sections[category]
+        display = (rule_state["name_var"].get() or "").strip()
+        rule = self._addon_rule_choices_by_category.get(category, {}).get(display)
         if rule is None:
             return
-        category = str(rule.get("__category__", ""))
-        if not self._addon_spec_auto_var.get():
-            self._set_info_output({"rule": rule.get("name"), "status": self._addon_rule_status_var.get()})
+        if category not in self._addon_spec_sections:
+            self._set_info_output({"rule": rule.get("name"), "status": rule_state["status_var"].get()})
             return
-        if category not in {"info_spec", "metadata_spec"}:
-            self._set_info_output({"rule": rule.get("name"), "status": self._addon_rule_status_var.get()})
+        spec_state = self._addon_spec_sections[category]
+        if not spec_state["auto_var"].get():
+            self._set_info_output({"rule": rule.get("name"), "status": rule_state["status_var"].get()})
             return
         path = self._resolve_rule_match(category, rule)
         if not path:
             self._set_info_output("Rule did not match for the current scan.")
             return
-        display = self._addon_spec_display_by_path.get(str(path), str(path))
-        self._addon_spec_file_var.set(display)
-        self._update_spec_details()
+        display_name = self._addon_spec_display_by_path.get(str(path), str(path))
+        spec_state["file_var"].set(display_name)
+        self._update_spec_details(category)
         data = self._apply_spec_to_scan(kind=category, spec_path=str(path), reco_id=self._current_reco_id)
         self._set_info_output(data)
 
-    def _on_rule_selected(self) -> None:
-        if bool(self._addon_rule_auto_var.get()):
-            self._apply_auto_rule_selection()
+    def _on_rule_selected(self, category: str) -> None:
+        if bool(self._addon_rule_sections[category]["auto_var"].get()):
+            self._apply_auto_rule_selection(category)
             return
-        self._update_rule_details()
+        self._update_rule_details(category)
 
-    def _on_rule_auto_toggle(self) -> None:
-        auto = bool(self._addon_rule_auto_var.get())
-        if self._addon_rule_combo is not None:
+    def _on_rule_auto_toggle(self, category: str) -> None:
+        rule_state = self._addon_rule_sections[category]
+        auto = bool(rule_state["auto_var"].get())
+        combo = rule_state.get("combo")
+        if combo is not None:
             try:
-                self._addon_rule_combo.state(["disabled"] if auto else ["!disabled"])
+                combo.state(["disabled"] if auto else ["!disabled"])
             except Exception:
-                self._addon_rule_combo.configure(state="disabled" if auto else "readonly")
-        if self._addon_rule_file_combo is not None:
+                combo.configure(state="disabled" if auto else "readonly")
+        file_combo = rule_state.get("file_combo")
+        if file_combo is not None:
             try:
-                self._addon_rule_file_combo.state(["disabled"] if auto else ["!disabled"])
+                file_combo.state(["disabled"] if auto else ["!disabled"])
             except Exception:
-                self._addon_rule_file_combo.configure(state="disabled" if auto else "readonly")
-        for btn in (self._addon_rule_browse_button, self._addon_rule_new_button):
+                file_combo.configure(state="disabled" if auto else "readonly")
+        for btn in (rule_state.get("browse_button"), rule_state.get("new_button")):
             if btn is None:
                 continue
             btn.configure(state=tk.DISABLED if auto else tk.NORMAL)
         if auto:
-            self._apply_auto_rule_selection()
-        self._update_rule_details()
-        self._apply_rule_combo_state()
+            self._apply_auto_rule_selection(category)
+        self._update_rule_details(category)
+        self._apply_rule_combo_state(category)
 
-    def _apply_auto_rule_selection(self) -> None:
-        rule = self._auto_applied_rule()
+    def _apply_auto_rule_selection(self, category: str) -> None:
+        rule_state = self._addon_rule_sections[category]
+        rule = self._auto_applied_rule(category)
         if rule is None:
-            self._addon_rule_file_var.set("None")
-            self._rule_name_var.set("None")
-            self._load_rule_file(None)
+            rule_state["file_var"].set("None")
+            rule_state["name_var"].set("None")
+            self._load_rule_file(category, None)
             return
         rule_name = str(rule.get("name") or "None")
-        category = str(rule.get("__category__", ""))
         use = str(rule.get("use") or "")
         match = self._find_rule_entry_file(rule_name, category, use)
         if match:
-            file_path = match
-            display = self._addon_rule_display_by_path.get(file_path, file_path)
-            self._addon_rule_file_var.set(display)
-            self._load_rule_file(file_path)
+            display = self._addon_rule_display_by_path.get(match, match)
+            rule_state["file_var"].set(display)
+            self._load_rule_file(category, match)
         else:
-            self._addon_rule_file_var.set("None")
-            self._load_rule_file(None)
-        if self._addon_rule_combo is not None:
-            if rule_name in self._addon_rule_combo["values"]:
-                self._rule_name_var.set(rule_name)
+            rule_state["file_var"].set("None")
+            self._load_rule_file(category, None)
+        combo = rule_state.get("combo")
+        if combo is not None:
+            if rule_name in combo["values"]:
+                rule_state["name_var"].set(rule_name)
             else:
-                self._rule_name_var.set(rule_name)
+                rule_state["name_var"].set(rule_name)
 
-    def _apply_rule_combo_state(self) -> None:
-        auto = bool(self._addon_rule_auto_var.get())
-        if self._addon_rule_file_combo is not None:
+    def _apply_rule_combo_state(self, category: str) -> None:
+        rule_state = self._addon_rule_sections[category]
+        auto = bool(rule_state["auto_var"].get())
+        file_combo = rule_state.get("file_combo")
+        if file_combo is not None:
             has_files = bool(self._addon_rule_file_map)
             state = "disabled" if auto else ("readonly" if has_files else "disabled")
             try:
-                self._addon_rule_file_combo.state(["disabled"] if state == "disabled" else ["!disabled"])
+                file_combo.state(["disabled"] if state == "disabled" else ["!disabled"])
             except Exception:
                 pass
-            self._addon_rule_file_combo.configure(state=state)
-        if self._addon_rule_combo is not None:
-            has_choices = bool(self._addon_rule_choices)
+            file_combo.configure(state=state)
+        combo = rule_state.get("combo")
+        if combo is not None:
+            has_choices = bool(self._addon_rule_choices_by_category.get(category))
             state = "disabled" if auto else ("readonly" if has_choices else "disabled")
             try:
-                self._addon_rule_combo.state(["disabled"] if state == "disabled" else ["!disabled"])
+                combo.state(["disabled"] if state == "disabled" else ["!disabled"])
             except Exception:
                 pass
-            self._addon_rule_combo.configure(state=state)
+            combo.configure(state=state)
 
     def _find_rule_entry_file(self, name: str, category: str, use: str) -> Optional[str]:
         try:
@@ -2453,9 +2606,10 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             if relpath:
                 return str((paths.rules_dir / relpath).resolve())
         return None
-    def _on_rule_file_selected(self) -> None:
-        path = self._resolve_rule_file_selection(self._addon_rule_file_var.get())
-        self._load_rule_file(path)
+    def _on_rule_file_selected(self, category: str) -> None:
+        rule_state = self._addon_rule_sections[category]
+        path = self._resolve_rule_file_selection(rule_state["file_var"].get())
+        self._load_rule_file(category, path)
 
     def _refresh_spec_choices(self) -> None:
         specs = self._installed_specs()
@@ -2486,36 +2640,43 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
 
         self._addon_spec_choices = choices
         values = sorted(choices.keys()) if choices else ["None"]
-        self._addon_spec_combo.configure(values=values, state="readonly" if choices else "disabled")
-        if values and (self._addon_spec_file_var.get() or "").strip() in ("", "None"):
-            self._addon_spec_file_var.set(values[0])
+        for category, spec_state in self._addon_spec_sections.items():
+            combo = spec_state.get("combo")
+            if combo is not None:
+                combo.configure(values=values, state="readonly" if choices else "disabled")
+            if values and (spec_state["file_var"].get() or "").strip() in ("", "None"):
+                spec_state["file_var"].set(values[0])
 
-    def _on_spec_auto_toggle(self) -> None:
-        if self._addon_spec_combo is not None:
+    def _on_spec_auto_toggle(self, category: str) -> None:
+        spec_state = self._addon_spec_sections[category]
+        combo = spec_state.get("combo")
+        if combo is not None:
             try:
-                self._addon_spec_combo.state(["disabled"] if self._addon_spec_auto_var.get() else ["!disabled"])
+                combo.state(["disabled"] if spec_state["auto_var"].get() else ["!disabled"])
             except Exception:
-                state = "disabled" if self._addon_spec_auto_var.get() else "readonly"
+                state = "disabled" if spec_state["auto_var"].get() else "readonly"
                 try:
-                    self._addon_spec_combo.configure(state=state)
+                    combo.configure(state=state)
                 except Exception:
                     pass
-        for btn in (self._addon_spec_browse_button, self._addon_spec_new_button):
+        for btn in (spec_state.get("browse_button"), spec_state.get("new_button")):
             if btn is None:
                 continue
             try:
-                btn.configure(state=tk.DISABLED if self._addon_spec_auto_var.get() else tk.NORMAL)
+                btn.configure(state=tk.DISABLED if spec_state["auto_var"].get() else tk.NORMAL)
             except Exception:
                 pass
-        self._update_spec_details()
+        self._update_spec_details(category)
 
-    def _on_spec_file_selected(self) -> None:
-        if self._addon_spec_auto_var.get():
-            self._addon_spec_auto_var.set(False)
-        self._update_spec_details()
+    def _on_spec_file_selected(self, category: str) -> None:
+        spec_state = self._addon_spec_sections[category]
+        if spec_state["auto_var"].get():
+            spec_state["auto_var"].set(False)
+        self._update_spec_details(category)
 
-    def _set_spec_description(self, text: str) -> None:
-        self._addon_spec_desc_var.set(text)
+    def _set_spec_description(self, category: str, text: str) -> None:
+        spec_state = self._addon_spec_sections[category]
+        spec_state["desc_var"].set(text)
 
     def _format_name_version(self, name: str, version: str) -> str:
         name = name.strip() if name else ""
@@ -2546,87 +2707,104 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 record[key] = str(value)
         return record
 
-    def _update_spec_details(self) -> None:
-        if self._addon_spec_auto_var.get():
-            display = (self._rule_name_var.get() or "").strip()
-            rule = self._addon_rule_choices.get(display)
+    def _update_spec_details(self, category: str) -> None:
+        spec_state = self._addon_spec_sections[category]
+        if spec_state["auto_var"].get():
+            rule_state = self._addon_rule_sections[category]
+            display = (rule_state["name_var"].get() or "").strip()
+            rule = self._addon_rule_choices_by_category.get(category, {}).get(display)
             if rule is None:
-                self._addon_spec_status_var.set("skipped")
-                self._addon_spec_name_var.set("None")
-                self._set_spec_description("")
+                spec_state["status_var"].set("skipped")
+                spec_state["name_var"].set("None")
+                spec_state["file_var"].set("None")
+                self._set_spec_description(category, "")
                 return
-            category = str(rule.get("__category__", ""))
             path = self._resolve_rule_match(category, rule) if self._scan is not None else None
             if path:
                 display_name = self._addon_spec_display_by_path.get(str(path), str(path))
-                self._addon_spec_file_var.set(display_name)
-                self._addon_spec_status_var.set("applied")
+                spec_state["file_var"].set(display_name)
+                spec_state["status_var"].set("applied")
             else:
-                self._addon_spec_status_var.set("skipped")
+                spec_state["status_var"].set("skipped")
             record = self._spec_record_from_path(path)
             if record:
-                self._addon_spec_name_var.set(
+                spec_state["name_var"].set(
                     self._format_name_version(record.get("name", ""), record.get("version", ""))
                 )
-                self._set_spec_description(str(record.get("description") or ""))
+                self._set_spec_description(category, str(record.get("description") or ""))
             else:
-                self._addon_spec_name_var.set(Path(path).name if path else "None")
-                self._set_spec_description("")
+                spec_state["name_var"].set(Path(path).name if path else "None")
+                self._set_spec_description(category, "")
             return
 
-        selection = (self._addon_spec_file_var.get() or "").strip()
+        selection = (spec_state["file_var"].get() or "").strip()
         record = self._addon_spec_choices.get(selection)
         if record:
             path = record.get("path") or ""
-            self._addon_spec_name_var.set(
+            spec_state["name_var"].set(
                 self._format_name_version(str(record.get("name", "")), str(record.get("version", "")))
             )
-            self._set_spec_description(str(record.get("description") or ""))
+            self._set_spec_description(category, str(record.get("description") or ""))
         else:
             path = selection if selection not in ("None", "") else None
             record = self._spec_record_from_path(path)
             if record:
-                self._addon_spec_name_var.set(
+                spec_state["name_var"].set(
                     self._format_name_version(record.get("name", ""), record.get("version", ""))
                 )
-                self._set_spec_description(str(record.get("description") or ""))
+                self._set_spec_description(category, str(record.get("description") or ""))
             else:
-                self._addon_spec_name_var.set(Path(path).name if path else "None")
-                self._set_spec_description("")
-        self._addon_spec_status_var.set("skipped")
+                spec_state["name_var"].set(Path(path).name if path else "None")
+                self._set_spec_description(category, "")
+        spec_state["status_var"].set("skipped")
 
-    def _apply_selected_spec(self) -> None:
+    def _apply_selected_spec(self, category: str) -> None:
         if self._scan is None:
             self._set_info_output("No scan selected.")
             return
-        spec_path = self._resolve_spec_path()
+        spec_path = self._resolve_spec_path_for_category(category)
         if not spec_path:
             self._set_info_output("No spec selected.")
             return
-        kind = "info_spec"
-        if self._addon_spec_auto_var.get():
-            display = (self._rule_name_var.get() or "").strip()
-            rule = self._addon_rule_choices.get(display)
-            if rule is not None:
-                candidate = str(rule.get("__category__", "info_spec"))
-                if candidate in {"info_spec", "metadata_spec"}:
-                    kind = candidate
-        else:
-            record = self._spec_record_from_path(spec_path)
-            candidate = str(record.get("category", "")).strip()
-            if candidate in {"info_spec", "metadata_spec"}:
-                kind = candidate
-        self._apply_spec_file_with_validation(kind=kind, path=spec_path)
+        kind = category
+        if category not in self._addon_spec_categories:
+            self._set_info_output("Spec selection is not available for converter hooks.")
+            return
+        self._apply_spec_file_with_validation(kind=kind, path=spec_path, category=category)
 
     def _resolve_spec_path(self) -> Optional[str]:
-        if self._addon_spec_auto_var.get():
-            display = (self._rule_name_var.get() or "").strip()
-            rule = self._addon_rule_choices.get(display)
+        for category in self._addon_spec_categories:
+            spec_state = self._addon_spec_sections[category]
+            if spec_state["auto_var"].get():
+                display = (self._addon_rule_sections[category]["name_var"].get() or "").strip()
+                rule = self._addon_rule_choices_by_category.get(category, {}).get(display)
+                if rule is None:
+                    continue
+                path = self._resolve_rule_match(category, rule)
+                if path:
+                    return path
+                continue
+            selection = (spec_state["file_var"].get() or "").strip()
+            if not selection or selection == "None":
+                continue
+            record = self._addon_spec_choices.get(selection)
+            if record:
+                path = record.get("path")
+                if path:
+                    return str(path)
+            if Path(selection).exists():
+                return selection
+        return None
+
+    def _resolve_spec_path_for_category(self, category: str) -> Optional[str]:
+        spec_state = self._addon_spec_sections[category]
+        if spec_state["auto_var"].get():
+            display = (self._addon_rule_sections[category]["name_var"].get() or "").strip()
+            rule = self._addon_rule_choices_by_category.get(category, {}).get(display)
             if rule is None:
                 return None
-            category = str(rule.get("__category__", ""))
             return self._resolve_rule_match(category, rule)
-        selection = (self._addon_spec_file_var.get() or "").strip()
+        selection = (spec_state["file_var"].get() or "").strip()
         if not selection or selection == "None":
             return None
         record = self._addon_spec_choices.get(selection)
@@ -2638,7 +2816,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return selection
         return None
 
-    def _apply_spec_file_with_validation(self, *, kind: str, path: str) -> None:
+    def _apply_spec_file_with_validation(self, *, kind: str, path: str, category: str) -> None:
         if not Path(path).exists():
             messagebox.showwarning("Spec", f"Spec file not found:\n{path}")
             return
@@ -2650,10 +2828,10 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             messagebox.showerror("Spec", f"Spec validation failed:\n{exc}")
             return
         data = self._apply_spec_to_scan(kind=kind, spec_path=path, reco_id=self._current_reco_id)
-        self._addon_spec_status_var.set("applied" if data else "skipped")
+        self._addon_spec_sections[category]["status_var"].set("applied" if data else "skipped")
         self._set_info_output(data)
 
-    def _browse_rule_file(self) -> None:
+    def _browse_rule_file(self, category: str) -> None:
         path = filedialog.askopenfilename(
             title="Select rule YAML",
             filetypes=(("YAML", "*.yaml *.yml"), ("All files", "*.*")),
@@ -2663,10 +2841,11 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if path not in self._addon_rule_session_files:
             self._addon_rule_session_files.append(path)
         self._refresh_rule_files()
-        self._addon_rule_file_var.set(path)
-        self._load_rule_file(path)
+        rule_state = self._addon_rule_sections[category]
+        rule_state["file_var"].set(path)
+        self._load_rule_file(category, path)
 
-    def _new_rule_file(self) -> None:
+    def _new_rule_file(self, category: str) -> None:
         path = filedialog.asksaveasfilename(
             title="Create new rule file",
             defaultextension=".yaml",
@@ -2677,30 +2856,33 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if path not in self._addon_rule_session_files:
             self._addon_rule_session_files.append(path)
         self._refresh_rule_files()
-        self._addon_rule_file_var.set(path)
+        rule_state = self._addon_rule_sections[category]
+        rule_state["file_var"].set(path)
         self._open_yaml_editor(path=Path(path), kind="rule")
 
-    def _edit_rule_file(self) -> None:
-        path = self._resolve_rule_file_selection(self._addon_rule_file_var.get())
+    def _edit_rule_file(self, category: str) -> None:
+        rule_state = self._addon_rule_sections[category]
+        path = self._resolve_rule_file_selection(rule_state["file_var"].get())
         if not path:
             return
         self._open_yaml_editor(path=Path(path), kind="rule")
 
-    def _browse_spec_file(self) -> None:
+    def _browse_spec_file(self, category: str) -> None:
         path = filedialog.askopenfilename(
             title="Select spec YAML",
             filetypes=(("YAML", "*.yaml *.yml"), ("All files", "*.*")),
         )
         if not path:
             return
-        self._addon_spec_auto_var.set(False)
+        spec_state = self._addon_spec_sections[category]
+        spec_state["auto_var"].set(False)
         if path not in self._addon_spec_session_files:
             self._addon_spec_session_files.append(path)
         self._refresh_spec_choices()
-        self._addon_spec_file_var.set(path)
-        self._update_spec_details()
+        spec_state["file_var"].set(path)
+        self._update_spec_details(category)
 
-    def _new_spec_file(self) -> None:
+    def _new_spec_file(self, category: str) -> None:
         path = filedialog.asksaveasfilename(
             title="Create new spec file",
             defaultextension=".yaml",
@@ -2708,15 +2890,16 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         )
         if not path:
             return
-        self._addon_spec_auto_var.set(False)
+        spec_state = self._addon_spec_sections[category]
+        spec_state["auto_var"].set(False)
         if path not in self._addon_spec_session_files:
             self._addon_spec_session_files.append(path)
         self._refresh_spec_choices()
-        self._addon_spec_file_var.set(path)
+        spec_state["file_var"].set(path)
         self._open_yaml_editor(path=Path(path), kind="spec")
 
-    def _edit_spec_file(self) -> None:
-        path = self._resolve_spec_path()
+    def _edit_spec_file(self, category: str) -> None:
+        path = self._resolve_spec_path_for_category(category)
         if not path:
             return
         self._open_yaml_editor(path=Path(path), kind="spec")
@@ -2757,24 +2940,16 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if not Path(path).exists():
             messagebox.showwarning("Context Map", f"Context map not found:\n{path}")
             return
-        spec_path = self._resolve_spec_path()
+        spec_category = "metadata_spec"
+        spec_path = self._resolve_spec_path_for_category(spec_category)
+        if not spec_path:
+            spec_category = "info_spec"
+            spec_path = self._resolve_spec_path_for_category(spec_category)
         if not spec_path:
             self._set_info_output("No spec selected.")
             return
 
-        kind = "info_spec"
-        if self._addon_spec_auto_var.get():
-            display = (self._rule_name_var.get() or "").strip()
-            rule = self._addon_rule_choices.get(display)
-            if rule is not None:
-                candidate = str(rule.get("__category__", "info_spec"))
-                if candidate in {"info_spec", "metadata_spec"}:
-                    kind = candidate
-        else:
-            record = self._spec_record_from_path(spec_path)
-            candidate = str(record.get("category", "")).strip()
-            if candidate in {"info_spec", "metadata_spec"}:
-                kind = candidate
+        kind = spec_category
 
         try:
             from brkraw.specs import remapper as remapper_core
@@ -2784,7 +2959,8 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             messagebox.showerror("Spec", f"Spec validation failed:\n{exc}")
             return
         current = self._apply_spec_to_scan(kind=kind, spec_path=spec_path, reco_id=self._current_reco_id)
-        self._addon_spec_status_var.set("applied" if current else "skipped")
+        if spec_category in self._addon_spec_sections:
+            self._addon_spec_sections[spec_category]["status_var"].set("applied" if current else "skipped")
 
         try:
             remapper_core.validate_context_map(Path(path))
@@ -2792,20 +2968,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         except Exception as exc:
             messagebox.showerror("Context Map", f"Context map validation failed:\n{exc}")
             return
-        target = None
-        if self._addon_spec_auto_var.get():
-            display = (self._rule_name_var.get() or "").strip()
-            rule = self._addon_rule_choices.get(display)
-            if rule is not None:
-                target = rule.get("__category__")
-        else:
-            selection = (self._addon_spec_file_var.get() or "").strip()
-            record = self._addon_spec_choices.get(selection)
-            if record is not None:
-                target = record.get("category")
-                if not target:
-                    meta_record = self._spec_record_from_path(record.get("path"))
-                    target = meta_record.get("category")
+        target = spec_category
         if target and not self._context_map_has_targets(map_data):
             target = None
         try:
@@ -3700,23 +3863,28 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         messagebox.showinfo("Save Output", f"Saved:\n{path}")
 
     def _reset_addon_state(self) -> None:
-        self._addon_rule_file_var.set("")
-        self._rule_name_var.set("None")
-        self._addon_rule_category_var.set("None")
-        self._addon_rule_status_var.set("skipped")
-        self._addon_spec_auto_var.set(True)
-        self._addon_spec_file_var.set("")
-        self._addon_spec_name_var.set("None")
-        self._addon_spec_status_var.set("skipped")
+        for category in self._addon_rule_categories:
+            rule_state = self._addon_rule_sections[category]
+            rule_state["file_var"].set("")
+            rule_state["name_var"].set("None")
+            rule_state["status_var"].set("skipped")
+            rule_state["desc_var"].set("")
+        for category in self._addon_spec_categories:
+            spec_state = self._addon_spec_sections[category]
+            spec_state["auto_var"].set(True)
+            spec_state["file_var"].set("")
+            spec_state["name_var"].set("None")
+            spec_state["status_var"].set("skipped")
+            spec_state["desc_var"].set("")
         self._addon_context_map_var.set("")
-        self._addon_context_status_var.set("skipped")
+        self._addon_context_status_var.set("")
         self._refresh_addon_controls()
         if self._scan is None:
             self._set_info_output("No scan selected.")
         else:
             self._set_info_output(self._info_full or {})
 
-    def _auto_applied_rule(self) -> Optional[Dict[str, Any]]:
+    def _auto_applied_rule(self, category: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if self._scan is None:
             return None
         try:
@@ -3728,9 +3896,22 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         except Exception:
             return None
         base = resolve_root(None)
-        for category in ("info_spec", "metadata_spec", "converter_hook"):
+        if category:
             selected = None
             for rule in rules.get(category, []):
+                if not isinstance(rule, dict):
+                    continue
+                try:
+                    matched = rule_matches(self._scan, rule, base=base)
+                except Exception:
+                    continue
+                if matched:
+                    selected = rule
+            return selected
+
+        for category_name in self._addon_rule_categories:
+            selected = None
+            for rule in rules.get(category_name, []):
                 if not isinstance(rule, dict):
                     continue
                 try:
