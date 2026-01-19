@@ -2218,7 +2218,41 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             path = addon_app.resolve_spec_reference(name, category=kind, root=resolve_root(None))
         except Exception:
             return None
-        return str(path)
+        return self._normalize_spec_path(str(path))
+
+    def _normalize_spec_path(self, value: str) -> Optional[str]:
+        if not value:
+            return None
+        path = Path(value)
+        if path.exists():
+            return str(path.resolve())
+        paths = config_core.paths(root=None)
+        candidates = []
+        if not path.is_absolute():
+            candidates.append(paths.specs_dir / path)
+        candidates.append(path)
+        if not path.suffix:
+            candidates.append(path.with_suffix(".yaml"))
+            candidates.append(path.with_suffix(".yml"))
+            if not path.is_absolute():
+                candidates.append((paths.specs_dir / path).with_suffix(".yaml"))
+                candidates.append((paths.specs_dir / path).with_suffix(".yml"))
+        for candidate in candidates:
+            try:
+                if candidate.exists():
+                    return str(candidate.resolve())
+            except Exception:
+                continue
+        return None
+
+    def _resolve_spec_reference(self, value: str, *, category: Optional[str] = None) -> Optional[str]:
+        if not value:
+            return None
+        try:
+            path = addon_app.resolve_spec_reference(value, category=category, root=resolve_root(None))
+        except Exception:
+            return None
+        return self._normalize_spec_path(str(path))
 
     def _auto_selected_spec_path(self, kind: str) -> Optional[str]:
         if self._scan is None:
@@ -2247,7 +2281,17 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             )
         except Exception:
             return None
-        return str(path) if path else None
+        if not path:
+            return None
+        normalized = self._normalize_spec_path(str(path))
+        if normalized:
+            return normalized
+        use = rule.get("use") if isinstance(rule, dict) else None
+        if isinstance(use, str):
+            resolved = self._resolve_spec_reference(use, category=kind)
+            if resolved:
+                return resolved
+        return str(path)
 
     def _refresh_addon_controls(self) -> None:
         self._refresh_rule_files()
@@ -2678,20 +2722,43 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         specs = self._installed_specs()
         choices: Dict[str, Dict[str, Any]] = {}
         self._addon_spec_display_by_path = {}
-        paths = config_core.paths(root=None)
+        values_by_category: Dict[str, List[str]] = {cat: [] for cat in self._addon_spec_categories}
         for spec in specs:
-            file_name = spec.get("file") or ""
-            if not file_name:
+            file_name = str(spec.get("file") or "").strip()
+            name = str(spec.get("name") or "").strip()
+            kind = str(spec.get("category") or spec.get("kind") or "").strip()
+
+            def _resolve_registered(value: str) -> Optional[str]:
+                if not value:
+                    return None
+                if kind and kind != "<Unknown>":
+                    return self._resolve_spec_reference(value, category=kind)
+                for candidate in self._addon_spec_categories:
+                    resolved = self._resolve_spec_reference(value, category=candidate)
+                    if resolved:
+                        return resolved
+                return self._resolve_spec_reference(value)
+
+            spec_path = None
+            if file_name:
+                spec_path = self._resolve_spec_reference(file_name, category=kind if kind != "<Unknown>" else None)
+            if spec_path is None and name:
+                spec_path = _resolve_registered(name)
+            if spec_path is None:
                 continue
-            basename = Path(file_name).name
-            display = basename
+
+            basename = Path(spec_path).name if spec_path else Path(file_name or name).name
+            display = basename or name or file_name
             if display in choices:
-                display = f"{basename} ({file_name})"
-            spec_path = str((paths.specs_dir / file_name).resolve())
+                hint = name or file_name or spec_path
+                display = f"{basename} ({hint})" if basename else hint
             record = dict(spec)
             record["path"] = spec_path
+            record["category"] = kind
             choices[display] = record
             self._addon_spec_display_by_path[spec_path] = display
+            if kind in values_by_category:
+                values_by_category[kind].append(display)
 
         for path in self._addon_spec_session_files:
             if not path:
@@ -2702,8 +2769,10 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._addon_spec_display_by_path[path] = path
 
         self._addon_spec_choices = choices
-        values = sorted(choices.keys()) if choices else ["None"]
         for category, spec_state in self._addon_spec_sections.items():
+            values = sorted(values_by_category.get(category, [])) if choices else []
+            if not values:
+                values = ["None"]
             combo = spec_state.get("combo")
             if combo is not None:
                 combo.configure(values=values, state="readonly" if choices else "disabled")
@@ -2854,9 +2923,15 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             if record:
                 path = record.get("path")
                 if path:
-                    return str(path)
-            if Path(selection).exists():
-                return selection
+                    normalized = self._normalize_spec_path(str(path))
+                    if normalized:
+                        return normalized
+            normalized = self._normalize_spec_path(selection)
+            if normalized:
+                return normalized
+            resolved = self._resolve_spec_reference(selection, category=category)
+            if resolved:
+                return resolved
         return None
 
     def _resolve_spec_path_for_category(self, category: str) -> Optional[str]:
@@ -2874,9 +2949,15 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if record:
             path = record.get("path")
             if path:
-                return str(path)
-        if Path(selection).exists():
-            return selection
+                normalized = self._normalize_spec_path(str(path))
+                if normalized:
+                    return normalized
+        normalized = self._normalize_spec_path(selection)
+        if normalized:
+            return normalized
+        resolved = self._resolve_spec_reference(selection, category=category)
+        if resolved:
+            return resolved
         return None
 
     def _apply_spec_file_with_validation(self, *, kind: str, path: str, category: str) -> None:
