@@ -1,8 +1,8 @@
 name: Release On Merge
 
 on:
-  pull_request:
-    types: [closed]
+  push:
+    branches: [main]
 
 permissions:
   contents: write
@@ -10,26 +10,75 @@ permissions:
 
 jobs:
   tag_release:
-    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' && github.event.pull_request.merged == true }}
+    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
       - name: Check release label
         id: release
         run: |
           python3 - <<'PY'
+          import json
           import os
+          from urllib import request
 
-          labels = os.environ.get("PR_LABELS", "")
-          allowed = "release" in {label.strip() for label in labels.split(",") if label.strip()}
+          token = os.environ.get("GITHUB_TOKEN")
+          repo = os.environ["GITHUB_REPOSITORY"]
+          sha = os.environ["GITHUB_SHA"]
+          owner, name = repo.split("/")
+
+          query = {
+              "query": """
+              query($owner: String!, $name: String!, $cursor: String) {
+                repository(owner: $owner, name: $name) {
+                  pullRequests(states: MERGED, first: 50, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
+                    nodes {
+                      mergeCommit { oid }
+                      labels(first: 100) { nodes { name } }
+                    }
+                    pageInfo { hasNextPage endCursor }
+                  }
+                }
+              }
+              """,
+              "variables": {"owner": owner, "name": name, "cursor": None},
+          }
+
+          allowed = False
+          while True:
+              req = request.Request("https://api.github.com/graphql", method="POST")
+              req.add_header("Authorization", f"Bearer {token}")
+              req.add_header("Content-Type", "application/json")
+              data = json.dumps(query).encode("utf-8")
+              with request.urlopen(req, data=data) as resp:
+                  payload = json.loads(resp.read().decode("utf-8"))
+
+              repo_data = payload.get("data", {}).get("repository", {})
+              pr_data = repo_data.get("pullRequests", {})
+              for pr in pr_data.get("nodes", []):
+                  merge_commit = pr.get("mergeCommit") or {}
+                  if merge_commit.get("oid") != sha:
+                      continue
+                  labels = {node.get("name") for node in pr.get("labels", {}).get("nodes", [])}
+                  if "release" in labels:
+                      allowed = True
+                  break
+              if allowed:
+                  break
+              page_info = pr_data.get("pageInfo", {})
+              if not page_info.get("hasNextPage"):
+                  break
+              query["variables"]["cursor"] = page_info.get("endCursor")
+
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"allowed={'true' if allowed else 'false'}\n")
           PY
         env:
-          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
       - name: Resolve version
         id: version
         run: |
@@ -79,5 +128,5 @@ jobs:
         if: ${{ steps.release.outputs.allowed == 'true' && steps.tag.outputs.exists == 'false' }}
         run: |
           tag="${{ steps.version.outputs.value }}"
-          git tag "$tag" "${{ github.event.pull_request.merge_commit_sha }}"
+          git tag "$tag" "${{ github.sha }}"
           git push origin "$tag"
