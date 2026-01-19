@@ -30,6 +30,24 @@ Extensions are delivered as viewer hooks discovered via the
 `brkraw.viewer.hook` entry point. Hooks can add new tabs and dataset callbacks
 without changing the core viewer, and they coexist with converter hooks and
 CLI hooks so UI features can build on the same rule/spec system as brkraw.
+For converter hooks, the Convert tab can render hook option forms when the
+hook exposes presets. Example (minimal):
+
+```python
+from dataclasses import dataclass
+from typing import Any, Dict
+
+@dataclass
+class Options:
+    reference: str = "water"
+    peak_ppm: float = 3.02
+
+def _build_options(kwargs: Dict[str, Any]) -> Options:
+    return Options(
+        reference=str(kwargs.get("reference", "water")),
+        peak_ppm=float(kwargs.get("peak_ppm", 3.02)),
+    )
+```
 
 ## Getting started
 

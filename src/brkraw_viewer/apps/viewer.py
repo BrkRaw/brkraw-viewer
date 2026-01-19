@@ -268,6 +268,18 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._convert_flip_z_var = tk.BooleanVar(value=False)
         self._convert_sidecar_var = tk.BooleanVar(value=False)
         self._convert_sidecar_format_var = tk.StringVar(value="json")
+        self._convert_hook_name_var = tk.StringVar(value="None")
+        self._convert_hook_status_var = tk.StringVar(value="")
+        self._convert_hook_option_vars: Dict[str, tk.StringVar] = {}
+        self._convert_hook_option_defaults: Dict[str, Any] = {}
+        self._convert_hook_option_types: Dict[str, str] = {}
+        self._convert_hook_option_choices: Dict[str, Dict[str, Any]] = {}
+        self._convert_hook_option_rows: list[tk.Widget] = []
+        self._convert_hook_frame: Optional[ttk.LabelFrame] = None
+        self._convert_hook_options_container: Optional[ttk.Frame] = None
+        self._convert_hook_options_window: Optional[tk.Toplevel] = None
+        self._convert_hook_current_name = ""
+        self._convert_hook_check: Optional[ttk.Checkbutton] = None
 
         self._layout_info_spec_combo: Optional[ttk.Combobox] = None
         self._layout_metadata_spec_combo: Optional[ttk.Combobox] = None
@@ -289,6 +301,13 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._addon_transform_browse_button: Optional[ttk.Button] = None
         self._addon_transform_new_button: Optional[ttk.Button] = None
         self._addon_transform_edit_button: Optional[ttk.Button] = None
+        self._rule_cache_signature: Optional[Tuple[Tuple[Tuple[str, int, int], ...], Tuple[Tuple[str, int, int], ...]]] = None
+        self._rule_cache_rules: Dict[str, List[Dict[str, Any]]] = {}
+        self._rule_cache_spec_paths: List[Path] = []
+        self._rule_match_cache: Dict[Tuple[int, str, Tuple[Any, ...]], Optional[str]] = {}
+        self._rule_match_state_cache: Dict[Tuple[int, Tuple[Any, ...]], bool] = {}
+        self._rule_auto_cache: Dict[Tuple[int, Optional[str]], Optional[Dict[str, Any]]] = {}
+        self._rule_auto_spec_cache: Dict[Tuple[int, str], Optional[str]] = {}
 
         self._registry_window: Optional[tk.Toplevel] = None
         self._registry_add_menu: Optional[tk.Menu] = None
@@ -2066,6 +2085,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._scan = self._study.avail.get(scan_id)
         self._update_viewer_hook_controls()
         self._refresh_addon_controls()
+        self._refresh_convert_hook_options()
         self._populate_reco_list(scan_id)
         self._update_params_summary()
         reco_ids = self._current_reco_ids()
@@ -2160,11 +2180,91 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
     def _on_extra_dim_change(self, *_: object) -> None:
         self._update_plot()
 
-    def _rule_entries(self, kind: str) -> list[Any]:
+    def _rule_file_signature(self, paths: Iterable[Path]) -> Tuple[Tuple[str, int, int], ...]:
+        entries: List[Tuple[str, int, int]] = []
+        for path in paths:
+            try:
+                stat = path.stat()
+            except Exception:
+                continue
+            entries.append((str(path.resolve()), int(stat.st_mtime_ns), int(stat.st_size)))
+        entries.sort()
+        return tuple(entries)
+
+    def _rule_dir_files(self) -> List[Path]:
+        try:
+            rules_dir = config_core.paths(root=None).rules_dir
+        except Exception:
+            return []
+        if not rules_dir.exists():
+            return []
+        files = list(rules_dir.rglob("*.yaml")) + list(rules_dir.rglob("*.yml"))
+        return [path.resolve() for path in files]
+
+    def _load_rules_cached(self) -> Dict[str, List[Dict[str, Any]]]:
+        rule_files = self._rule_dir_files()
+        rule_signature = self._rule_file_signature(rule_files)
+        spec_signature = self._rule_file_signature(self._rule_cache_spec_paths)
+        if self._rule_cache_signature == (rule_signature, spec_signature):
+            return self._rule_cache_rules
         try:
             rules = load_rules(root=resolve_root(None), validate=False)
         except Exception:
             rules = {}
+        spec_paths: List[Path] = []
+        for items in rules.values():
+            if not isinstance(items, list):
+                continue
+            for rule in items:
+                if not isinstance(rule, dict):
+                    continue
+                spec_path = rule.get("__spec_path__")
+                if isinstance(spec_path, Path):
+                    spec_paths.append(spec_path)
+        self._rule_cache_spec_paths = spec_paths
+        spec_signature = self._rule_file_signature(spec_paths)
+        self._rule_cache_signature = (rule_signature, spec_signature)
+        self._rule_cache_rules = rules
+        self._rule_match_cache.clear()
+        self._rule_match_state_cache.clear()
+        self._rule_auto_cache.clear()
+        self._rule_auto_spec_cache.clear()
+        return rules
+
+    def _rule_cache_key(self, rule: Mapping[str, Any]) -> Tuple[Any, ...]:
+        return (
+            rule.get("name"),
+            rule.get("use"),
+            rule.get("version"),
+            rule.get("__category__"),
+            repr(rule.get("when")),
+            repr(rule.get("if")),
+        )
+
+    def _rule_matches_cached(self, *, rule: Mapping[str, Any], base: Path) -> bool:
+        scan = self._scan
+        if scan is None:
+            return False
+        scan_id = getattr(scan, "scan_id", None)
+        if scan_id is None:
+            return False
+        cache_key = (int(scan_id), self._rule_cache_key(rule))
+        if cache_key in self._rule_match_state_cache:
+            return self._rule_match_state_cache[cache_key]
+        try:
+            from brkraw.specs.rules.logic import rule_matches
+        except Exception:
+            self._rule_match_state_cache[cache_key] = False
+            return False
+        try:
+            matched = rule_matches(scan, cast(Dict[str, Any], rule), base=base)
+        except Exception:
+            matched = False
+        self._rule_match_state_cache[cache_key] = bool(matched)
+        return bool(matched)
+
+    def _rule_entries(self, kind: str) -> list[Any]:
+        rules = self._load_rules_cached()
         raw = rules.get(kind, [])
         if isinstance(raw, (list, tuple)):
             return list(raw)
@@ -2218,13 +2318,53 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             path = addon_app.resolve_spec_reference(name, category=kind, root=resolve_root(None))
         except Exception:
             return None
-        return str(path)
+        return self._normalize_spec_path(str(path))
+
+    def _normalize_spec_path(self, value: str) -> Optional[str]:
+        if not value:
+            return None
+        path = Path(value)
+        if path.exists():
+            return str(path.resolve())
+        paths = config_core.paths(root=None)
+        candidates = []
+        if not path.is_absolute():
+            candidates.append(paths.specs_dir / path)
+        candidates.append(path)
+        if not path.suffix:
+            candidates.append(path.with_suffix(".yaml"))
+            candidates.append(path.with_suffix(".yml"))
+            if not path.is_absolute():
+                candidates.append((paths.specs_dir / path).with_suffix(".yaml"))
+                candidates.append((paths.specs_dir / path).with_suffix(".yml"))
+        for candidate in candidates:
+            try:
+                if candidate.exists():
+                    return str(candidate.resolve())
+            except Exception:
+                continue
+        return None
+
+    def _resolve_spec_reference(self, value: str, *, category: Optional[str] = None) -> Optional[str]:
+        if not value:
+            return None
+        try:
+            path = addon_app.resolve_spec_reference(value, category=category, root=resolve_root(None))
+        except Exception:
+            return None
+        return self._normalize_spec_path(str(path))
 
     def _auto_selected_spec_path(self, kind: str) -> Optional[str]:
         if self._scan is None:
             return None
+        scan_id = getattr(self._scan, "scan_id", None)
+        if scan_id is None:
+            return None
+        cache_key = (int(scan_id), kind)
+        if cache_key in self._rule_auto_spec_cache:
+            return self._rule_auto_spec_cache[cache_key]
         try:
-            rules = load_rules(root=resolve_root(None), validate=False)
+            rules = self._load_rules_cached()
             path = select_rule_use(
                 self._scan,
                 rules.get(kind, []),
@@ -2232,12 +2372,21 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 resolve_paths=True,
             )
         except Exception:
+            self._rule_auto_spec_cache[cache_key] = None
             return None
-        return str(path) if path else None
+        resolved = str(path) if path else None
+        self._rule_auto_spec_cache[cache_key] = resolved
+        return resolved
 
     def _resolve_rule_match(self, kind: str, rule: Any) -> Optional[str]:
         if self._scan is None:
             return None
+        scan_id = getattr(self._scan, "scan_id", None)
+        if scan_id is None or not isinstance(rule, dict):
+            return None
+        cache_key = (int(scan_id), kind, self._rule_cache_key(rule))
+        if cache_key in self._rule_match_cache:
+            return self._rule_match_cache[cache_key]
         try:
             path = select_rule_use(
                 self._scan,
@@ -2246,8 +2395,24 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
                 resolve_paths=kind in {"info_spec", "metadata_spec"},
             )
         except Exception:
+            self._rule_match_cache[cache_key] = None
             return None
-        return str(path) if path else None
+        if not path:
+            self._rule_match_cache[cache_key] = None
+            return None
+        normalized = self._normalize_spec_path(str(path))
+        if normalized:
+            self._rule_match_cache[cache_key] = normalized
+            return normalized
+        use = rule.get("use") if isinstance(rule, dict) else None
+        if isinstance(use, str):
+            resolved = self._resolve_spec_reference(use, category=kind)
+            if resolved:
+                self._rule_match_cache[cache_key] = resolved
+                return resolved
+        resolved = str(path)
+        self._rule_match_cache[cache_key] = resolved
+        return resolved
 
     def _refresh_addon_controls(self) -> None:
         self._refresh_rule_files()
@@ -2678,20 +2843,43 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         specs = self._installed_specs()
         choices: Dict[str, Dict[str, Any]] = {}
         self._addon_spec_display_by_path = {}
-        paths = config_core.paths(root=None)
+        values_by_category: Dict[str, List[str]] = {cat: [] for cat in self._addon_spec_categories}
         for spec in specs:
-            file_name = spec.get("file") or ""
-            if not file_name:
+            file_name = str(spec.get("file") or "").strip()
+            name = str(spec.get("name") or "").strip()
+            kind = str(spec.get("category") or spec.get("kind") or "").strip()
+
+            def _resolve_registered(value: str) -> Optional[str]:
+                if not value:
+                    return None
+                if kind and kind != "<Unknown>":
+                    return self._resolve_spec_reference(value, category=kind)
+                for candidate in self._addon_spec_categories:
+                    resolved = self._resolve_spec_reference(value, category=candidate)
+                    if resolved:
+                        return resolved
+                return self._resolve_spec_reference(value)
+
+            spec_path = None
+            if file_name:
+                spec_path = self._resolve_spec_reference(file_name, category=kind if kind != "<Unknown>" else None)
+            if spec_path is None and name:
+                spec_path = _resolve_registered(name)
+            if spec_path is None:
                 continue
-            basename = Path(file_name).name
-            display = basename
+
+            basename = Path(spec_path).name if spec_path else Path(file_name or name).name
+            display = basename or name or file_name
             if display in choices:
-                display = f"{basename} ({file_name})"
-            spec_path = str((paths.specs_dir / file_name).resolve())
+                hint = name or file_name or spec_path
+                display = f"{basename} ({hint})" if basename else hint
             record = dict(spec)
             record["path"] = spec_path
+            record["category"] = kind
             choices[display] = record
             self._addon_spec_display_by_path[spec_path] = display
+            if kind in values_by_category:
+                values_by_category[kind].append(display)
 
         for path in self._addon_spec_session_files:
             if not path:
@@ -2702,8 +2890,10 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             self._addon_spec_display_by_path[path] = path
 
         self._addon_spec_choices = choices
-        values = sorted(choices.keys()) if choices else ["None"]
         for category, spec_state in self._addon_spec_sections.items():
+            values = sorted(values_by_category.get(category, [])) if choices else []
+            if not values:
+                values = ["None"]
             combo = spec_state.get("combo")
             if combo is not None:
                 combo.configure(values=values, state="readonly" if choices else "disabled")
@@ -2854,9 +3044,15 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             if record:
                 path = record.get("path")
                 if path:
-                    return str(path)
-            if Path(selection).exists():
-                return selection
+                    normalized = self._normalize_spec_path(str(path))
+                    if normalized:
+                        return normalized
+            normalized = self._normalize_spec_path(selection)
+            if normalized:
+                return normalized
+            resolved = self._resolve_spec_reference(selection, category=category)
+            if resolved:
+                return resolved
         return None
 
     def _resolve_spec_path_for_category(self, category: str) -> Optional[str]:
@@ -2874,9 +3070,15 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if record:
             path = record.get("path")
             if path:
-                return str(path)
-        if Path(selection).exists():
-            return selection
+                normalized = self._normalize_spec_path(str(path))
+                if normalized:
+                    return normalized
+        normalized = self._normalize_spec_path(selection)
+        if normalized:
+            return normalized
+        resolved = self._resolve_spec_reference(selection, category=category)
+        if resolved:
+            return resolved
         return None
 
     def _apply_spec_file_with_validation(self, *, kind: str, path: str, category: str) -> None:
@@ -3950,26 +4152,22 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
     def _auto_applied_rule(self, category: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if self._scan is None:
             return None
-        try:
-            from brkraw.specs.rules.logic import rule_matches
-        except Exception:
+        scan_id = getattr(self._scan, "scan_id", None)
+        if scan_id is None:
             return None
-        try:
-            rules = load_rules(root=resolve_root(None), validate=False)
-        except Exception:
-            return None
+        cache_key = (int(scan_id), category)
+        if cache_key in self._rule_auto_cache:
+            return self._rule_auto_cache[cache_key]
+        rules = self._load_rules_cached()
         base = resolve_root(None)
         if category:
             selected = None
             for rule in rules.get(category, []):
                 if not isinstance(rule, dict):
                     continue
-                try:
-                    matched = rule_matches(self._scan, rule, base=base)
-                except Exception:
-                    continue
-                if matched:
+                if self._rule_matches_cached(rule=rule, base=base):
                     selected = rule
+            self._rule_auto_cache[cache_key] = selected
             return selected
 
         for category_name in self._addon_rule_categories:
@@ -3977,14 +4175,12 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             for rule in rules.get(category_name, []):
                 if not isinstance(rule, dict):
                     continue
-                try:
-                    matched = rule_matches(self._scan, rule, base=base)
-                except Exception:
-                    continue
-                if matched:
+                if self._rule_matches_cached(rule=rule, base=base):
                     selected = rule
             if selected is not None:
+                self._rule_auto_cache[cache_key] = selected
                 return selected
+        self._rule_auto_cache[cache_key] = None
         return None
 
     def _browse_output_dir(self) -> None:

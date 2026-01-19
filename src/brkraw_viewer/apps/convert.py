@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import ast
+import dataclasses
 import importlib
+import inspect
 import tkinter as tk
 import logging
 import json
 import yaml
 from pathlib import Path
 from tkinter import filedialog, ttk
-from typing import Any, Iterable, Mapping, Optional, cast
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, cast, get_args, get_origin, get_type_hints
 
 from brkraw.core import config as config_core
 from brkraw.core import layout as layout_core
 from brkraw.core.config import resolve_root
 from brkraw.resolver import affine as affine_resolver
 from brkraw.resolver.affine import SubjectPose, SubjectType
+from brkraw.specs import hook as converter_core
 from brkraw.specs import remapper as remapper_core
 
 logger = logging.getLogger("brkraw.viewer")
@@ -83,6 +87,22 @@ class ConvertTabMixin:
     _convert_flip_z_check: ttk.Checkbutton
     _convert_settings_text: Optional[tk.Text]
     _convert_preview_text: Optional[tk.Text]
+    _convert_hook_frame: Optional[ttk.LabelFrame]
+    _convert_hook_name_var: tk.StringVar
+    _convert_hook_status_var: tk.StringVar
+    _convert_hook_option_vars: Dict[str, tk.StringVar]
+    _convert_hook_option_defaults: Dict[str, Any]
+    _convert_hook_option_types: Dict[str, str]
+    _convert_hook_option_choices: Dict[str, Dict[str, Any]]
+    _convert_hook_option_rows: list[tk.Widget]
+    _convert_hook_options_container: Optional[ttk.Frame]
+    _convert_hook_options_window: Optional[tk.Toplevel]
+    _convert_hook_edit_button: Optional[ttk.Button]
+    _convert_hook_current_name: str
+    _convert_hook_check: Optional[ttk.Checkbutton]
+    _viewer_hook_enabled_var: tk.BooleanVar
+
+    def _on_viewer_hook_toggle(self) -> None: ...
 
     _subject_type_var: tk.StringVar
     _pose_primary_var: tk.StringVar
@@ -99,6 +119,28 @@ class ConvertTabMixin:
 
     @staticmethod
     def _cast_subject_pose(value: Optional[str]) -> SubjectPose: ...
+
+    _PRESET_IGNORE_PARAMS = frozenset(
+        {
+            "self",
+            "scan",
+            "scan_id",
+            "reco_id",
+            "format",
+            "space",
+            "override_header",
+            "override_subject_type",
+            "override_subject_pose",
+            "flip_x",
+            "xyz_units",
+            "t_units",
+            "decimals",
+            "spec",
+            "context_map",
+            "return_spec",
+            "hook_args_by_name",
+        }
+    )
 
     def _build_convert_tab(self, layout_tab: ttk.Frame) -> None:
         layout_tab.columnconfigure(0, weight=1)
@@ -232,12 +274,8 @@ class ConvertTabMixin:
             variable=self._convert_sidecar_format_var,
         ).pack(side=tk.LEFT, padx=(6, 0))
 
-        orientation_title = ttk.Label(convert_left, text="Orientation")
-        orientation_title.grid(row=2, column=0, sticky="ew", pady=(0, 4))
-        orientation_title.configure(anchor="center")
-
         use_viewer_row = ttk.Frame(convert_left)
-        use_viewer_row.grid(row=3, column=0, sticky="w")
+        use_viewer_row.grid(row=2, column=0, sticky="w")
         ttk.Checkbutton(
             use_viewer_row,
             text="Use Viewer orientation",
@@ -246,7 +284,7 @@ class ConvertTabMixin:
         ).pack(side=tk.LEFT)
 
         space_row = ttk.Frame(convert_left)
-        space_row.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        space_row.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         space_row.columnconfigure(1, weight=1, uniform="orient")
         ttk.Label(space_row, text="Space").grid(row=0, column=0, sticky="w")
         self._convert_space_combo = ttk.Combobox(
@@ -290,7 +328,7 @@ class ConvertTabMixin:
         self._convert_pose_secondary_combo.grid(row=0, column=2, sticky="ew")
 
         flip_row = ttk.Frame(convert_left)
-        flip_row.grid(row=6, column=0, sticky="w", pady=(6, 0))
+        flip_row.grid(row=6, column=0, sticky="w", pady=(0, 0))
         ttk.Label(flip_row, text="Flip").pack(side=tk.LEFT, padx=(0, 6))
         self._convert_flip_x_check = ttk.Checkbutton(
             flip_row,
@@ -311,8 +349,31 @@ class ConvertTabMixin:
         )
         self._convert_flip_z_check.pack(side=tk.LEFT, padx=(6, 0))
 
+        self._convert_hook_frame = ttk.LabelFrame(convert_left, text="", padding=(6, 6))
+        self._convert_hook_frame.grid(row=7, column=0, sticky="ew", pady=(0, 0))
+        self._convert_hook_frame.columnconfigure(2, weight=1)
+        self._convert_hook_frame.columnconfigure(3, weight=0)
+
+        self._convert_hook_check = ttk.Checkbutton(
+            self._convert_hook_frame,
+            text="",
+            variable=self._viewer_hook_enabled_var,
+            command=self._on_viewer_hook_toggle,
+        )
+        self._convert_hook_check.grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Label(self._convert_hook_frame, text="Available Hook:").grid(row=0, column=1, sticky="w")
+        ttk.Label(self._convert_hook_frame, textvariable=self._convert_hook_name_var).grid(
+            row=0, column=2, sticky="w", padx=(6, 0)
+        )
+        self._convert_hook_edit_button = ttk.Button(
+            self._convert_hook_frame,
+            text="Edit Options",
+            command=self._open_convert_hook_options,
+        )
+        self._convert_hook_edit_button.grid(row=0, column=3, sticky="e", padx=(8, 0))
+
         actions = ttk.Frame(convert_left)
-        actions.grid(row=7, column=0, sticky="ew", pady=(10, 0))
+        actions.grid(row=8, column=0, sticky="ew", pady=(10, 0))
         actions.columnconfigure(0, weight=1, uniform="convert_actions")
         actions.columnconfigure(1, weight=1, uniform="convert_actions")
         ttk.Button(actions, text="Preview Outputs", command=self._preview_convert_outputs).grid(row=0, column=0, sticky="ew")
@@ -343,6 +404,8 @@ class ConvertTabMixin:
         self._convert_preview_text.configure(yscrollcommand=preview_scroll_y.set, xscrollcommand=preview_scroll_x.set)
         self._convert_preview_text.configure(state=tk.DISABLED)
 
+        self._refresh_convert_hook_options()
+
     def _browse_output_dir(self) -> None:
         path = filedialog.askdirectory(title="Select output directory")
         if not path:
@@ -364,6 +427,406 @@ class ConvertTabMixin:
         self._convert_settings_text.delete("1.0", tk.END)
         self._convert_settings_text.insert(tk.END, text)
         self._convert_settings_text.configure(state=tk.DISABLED)
+
+    def _clear_convert_hook_option_rows(self, *, clear_values: bool = False) -> None:
+        for widget in self._convert_hook_option_rows:
+            try:
+                widget.destroy()
+            except Exception:
+                pass
+        self._convert_hook_option_rows = []
+        if clear_values:
+            self._convert_hook_option_vars = {}
+            self._convert_hook_option_defaults = {}
+            self._convert_hook_option_types = {}
+            self._convert_hook_option_choices = {}
+
+    def _infer_hook_preset_from_module(self, module: object) -> Dict[str, Any]:
+        for attr in ("HOOK_PRESET", "HOOK_ARGS", "HOOK_DEFAULTS"):
+            value = getattr(module, attr, None)
+            if isinstance(value, Mapping):
+                return dict(value)
+        build_options = getattr(module, "_build_options", None)
+        if callable(build_options):
+            try:
+                options = build_options({})
+            except Exception:
+                return {}
+            if dataclasses.is_dataclass(options):
+                if not isinstance(options, type):
+                    return dict(dataclasses.asdict(options))
+                defaults: Dict[str, Any] = {}
+                for field in dataclasses.fields(options):
+                    if field.default is not dataclasses.MISSING:
+                        defaults[field.name] = field.default
+                        continue
+                    if field.default_factory is not dataclasses.MISSING:  # type: ignore[comparison-overlap]
+                        try:
+                            defaults[field.name] = field.default_factory()  # type: ignore[misc]
+                        except Exception:
+                            defaults[field.name] = None
+                        continue
+                    defaults[field.name] = None
+                return defaults
+            if hasattr(options, "__dict__"):
+                return dict(vars(options))
+        return {}
+
+    def _infer_hook_preset(self, entry: Mapping[str, Any]) -> Dict[str, Any]:
+        preset: Dict[str, Any] = {}
+        modules: list[object] = []
+
+        for func in entry.values():
+            if callable(func):
+                mod_name = getattr(func, "__module__", None)
+                if isinstance(mod_name, str) and mod_name:
+                    try:
+                        modules.append(importlib.import_module(mod_name))
+                    except Exception:
+                        pass
+
+        for module in modules:
+            module_preset = self._infer_hook_preset_from_module(module)
+            if module_preset:
+                return dict(sorted(module_preset.items(), key=lambda item: item[0]))
+
+        for func in entry.values():
+            if not callable(func):
+                continue
+            try:
+                sig = inspect.signature(func)
+            except (TypeError, ValueError):
+                continue
+            for param in sig.parameters.values():
+                if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                    continue
+                name = param.name
+                if name in self._PRESET_IGNORE_PARAMS:
+                    continue
+                if name in preset:
+                    continue
+                if param.default is inspect.Parameter.empty:
+                    preset[name] = None
+                else:
+                    preset[name] = param.default
+        return dict(sorted(preset.items(), key=lambda item: item[0]))
+
+    def _infer_hook_option_hints(self, entry: Mapping[str, Any]) -> Dict[str, Any]:
+        hints: Dict[str, Any] = {}
+        modules: list[object] = []
+
+        for func in entry.values():
+            if callable(func):
+                mod_name = getattr(func, "__module__", None)
+                if isinstance(mod_name, str) and mod_name:
+                    try:
+                        modules.append(importlib.import_module(mod_name))
+                    except Exception:
+                        pass
+
+        for module in modules:
+            build_options = getattr(module, "_build_options", None)
+            if callable(build_options):
+                try:
+                    options = build_options({})
+                except Exception:
+                    options = None
+                if dataclasses.is_dataclass(options):
+                    for field in dataclasses.fields(options):
+                        if field.name not in hints:
+                            hints[field.name] = field.type
+
+        for func in entry.values():
+            if not callable(func):
+                continue
+            try:
+                sig = inspect.signature(func)
+                type_hints = get_type_hints(func)
+            except (TypeError, ValueError):
+                continue
+            for param in sig.parameters.values():
+                if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                    continue
+                name = param.name
+                if name in self._PRESET_IGNORE_PARAMS or name in hints:
+                    continue
+                annotation = type_hints.get(name, param.annotation)
+                if annotation is inspect.Parameter.empty:
+                    continue
+                hints[name] = annotation
+        return hints
+
+    def _format_hook_type(self, value: Any, hint: Any = None) -> str:
+        if hint is not None:
+            origin = get_origin(hint)
+            if origin is not None and origin.__name__ == "Literal":
+                return "Literal"
+            if hint is bool:
+                return "bool"
+            if hint is int:
+                return "int"
+            if hint is float:
+                return "float"
+            if hint is str:
+                return "str"
+        if value is None:
+            return "Any"
+        if isinstance(value, bool):
+            return "bool"
+        if isinstance(value, int) and not isinstance(value, bool):
+            return "int"
+        if isinstance(value, float):
+            return "float"
+        if isinstance(value, str):
+            return "str"
+        if isinstance(value, list):
+            return "list"
+        if isinstance(value, dict):
+            return "dict"
+        return type(value).__name__
+
+    def _coerce_hook_value(self, raw: str, default: Any) -> Any:
+        text = raw.strip()
+        if text == "":
+            return default
+        if isinstance(default, bool):
+            return text.lower() in {"1", "true", "yes", "y", "on"}
+        if isinstance(default, int) and not isinstance(default, bool):
+            try:
+                return int(text)
+            except ValueError:
+                return default
+        if isinstance(default, float):
+            try:
+                return float(text)
+            except ValueError:
+                return default
+        if isinstance(default, (list, tuple, dict)):
+            try:
+                return ast.literal_eval(text)
+            except Exception:
+                try:
+                    return json.loads(text)
+                except Exception:
+                    return default
+        if default is None:
+            try:
+                return ast.literal_eval(text)
+            except Exception:
+                try:
+                    return json.loads(text)
+                except Exception:
+                    return text
+        return text
+
+    def _refresh_convert_hook_options(self, *, render_form: bool = False) -> None:
+        if self._convert_hook_frame is None:
+            return
+        hook_name = ""
+        if self._scan is not None:
+            hook_name = (getattr(self._scan, "_converter_hook_name", None) or "").strip()
+        if hook_name != self._convert_hook_current_name:
+            self._convert_hook_current_name = hook_name
+            self._clear_convert_hook_option_rows(clear_values=True)
+        self._convert_hook_name_var.set(hook_name or "None")
+        if not hook_name:
+            self._convert_hook_status_var.set("No converter hook detected for this scan.")
+            if self._convert_hook_check is not None:
+                self._convert_hook_check.configure(state="disabled")
+            if self._convert_hook_edit_button is not None:
+                self._convert_hook_edit_button.configure(state="disabled")
+            return
+        try:
+            entry = converter_core.resolve_hook(hook_name)
+        except Exception:
+            self._convert_hook_status_var.set("Converter hook not available.")
+            if self._convert_hook_check is not None:
+                self._convert_hook_check.configure(state="disabled")
+            if self._convert_hook_edit_button is not None:
+                self._convert_hook_edit_button.configure(state="disabled")
+            return
+        preset = self._infer_hook_preset(entry)
+        hints = self._infer_hook_option_hints(entry)
+        if not preset:
+            self._convert_hook_status_var.set("Hook has no exposed options.")
+            if self._convert_hook_check is not None:
+                self._convert_hook_check.configure(state="normal")
+            if self._convert_hook_edit_button is not None:
+                self._convert_hook_edit_button.configure(state="disabled")
+            return
+        self._convert_hook_status_var.set("")
+        if self._convert_hook_check is not None:
+            self._convert_hook_check.configure(state="normal")
+        if self._convert_hook_edit_button is not None:
+            self._convert_hook_edit_button.configure(state="normal")
+        if render_form:
+            self._render_convert_hook_form(preset, hints)
+
+    def _render_convert_hook_form(self, preset: Dict[str, Any], hints: Dict[str, Any]) -> None:
+        if self._convert_hook_options_container is None:
+            return
+        self._clear_convert_hook_option_rows()
+        ttk.Label(self._convert_hook_options_container, text="Key").grid(row=0, column=0, sticky="w")
+        ttk.Label(self._convert_hook_options_container, text="Type").grid(row=0, column=1, sticky="w")
+        ttk.Label(self._convert_hook_options_container, text="Value").grid(row=0, column=2, sticky="w")
+        self._convert_hook_option_rows.extend(
+            list(self._convert_hook_options_container.grid_slaves(row=0))
+        )
+
+        row = 1
+        self._convert_hook_option_choices = {}
+        for key, default in preset.items():
+            existing = self._convert_hook_option_vars.get(key)
+            var = existing or tk.StringVar(value="" if default is None else str(default))
+            hint = hints.get(key)
+            type_label = self._format_hook_type(default, hint)
+            self._convert_hook_option_vars[key] = var
+            self._convert_hook_option_defaults[key] = default
+            self._convert_hook_option_types[key] = type_label
+
+            key_label = ttk.Label(self._convert_hook_options_container, text=key)
+            key_label.grid(row=row, column=0, sticky="w", padx=(0, 6), pady=2)
+            type_label_widget = ttk.Label(self._convert_hook_options_container, text=type_label)
+            type_label_widget.grid(row=row, column=1, sticky="w", padx=(0, 6), pady=2)
+            widget: tk.Widget
+            origin = get_origin(hint) if hint is not None else None
+            if origin is not None and origin.__name__ == "Literal":
+                choices = list(get_args(hint))
+                if choices:
+                    values = [str(choice) for choice in choices]
+                    self._convert_hook_option_choices[key] = {str(choice): choice for choice in choices}
+                    if var.get() not in values:
+                        lower_map = {value.lower(): value for value in values}
+                        matched = lower_map.get(var.get().lower())
+                        var.set(matched if matched is not None else values[0])
+                    widget = ttk.Combobox(
+                        self._convert_hook_options_container,
+                        textvariable=var,
+                        values=values,
+                        state="readonly",
+                    )
+                else:
+                    widget = ttk.Entry(self._convert_hook_options_container, textvariable=var)
+            elif hint is bool or isinstance(default, bool):
+                values = ["True", "False"]
+                if var.get().lower() in {"true", "false"}:
+                    var.set("True" if var.get().lower() == "true" else "False")
+                if var.get() not in values:
+                    var.set("True" if default is True else "False")
+                widget = ttk.Combobox(
+                    self._convert_hook_options_container,
+                    textvariable=var,
+                    values=values,
+                    state="readonly",
+                )
+            else:
+                widget = ttk.Entry(self._convert_hook_options_container, textvariable=var)
+            widget.grid(row=row, column=2, sticky="ew", pady=2)
+
+            self._convert_hook_option_rows.extend([key_label, type_label_widget, widget])
+            row += 1
+
+        self._convert_hook_options_container.columnconfigure(2, weight=1)
+
+    def _reset_convert_hook_options(self) -> None:
+        for key, var in self._convert_hook_option_vars.items():
+            default = self._convert_hook_option_defaults.get(key)
+            choices = self._convert_hook_option_choices.get(key)
+            if choices:
+                target = str(default) if default is not None else None
+                if target is None or target not in choices:
+                    target = next(iter(choices.keys()), "")
+                var.set(target)
+            else:
+                var.set("" if default is None else str(default))
+
+    def _open_convert_hook_options(self) -> None:
+        self._refresh_convert_hook_options(render_form=False)
+        hook_name = (self._convert_hook_name_var.get() or "").strip()
+        if not hook_name or hook_name == "None":
+            return
+        if self._convert_hook_options_window is None or not self._convert_hook_options_window.winfo_exists():
+            master = cast(tk.Misc, self)
+            self._convert_hook_options_window = tk.Toplevel(master)
+            self._convert_hook_options_window.title("Converter Hook Options")
+            cast(Any, self._convert_hook_options_window).transient(master)
+            self._convert_hook_options_window.resizable(True, True)
+            self._convert_hook_options_window.columnconfigure(0, weight=1)
+            self._convert_hook_options_window.rowconfigure(0, weight=1)
+
+            container = ttk.Frame(self._convert_hook_options_window, padding=(10, 10))
+            container.grid(row=0, column=0, sticky="nsew")
+            container.columnconfigure(0, weight=1)
+            container.rowconfigure(1, weight=1)
+
+            header = ttk.Frame(container)
+            header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+            header.columnconfigure(1, weight=1)
+            ttk.Label(header, text="Hook").grid(row=0, column=0, sticky="w")
+            ttk.Label(header, textvariable=self._convert_hook_name_var).grid(row=0, column=1, sticky="w")
+
+            self._convert_hook_options_container = ttk.Frame(container)
+            self._convert_hook_options_container.grid(row=1, column=0, sticky="nsew")
+            self._convert_hook_options_container.columnconfigure(2, weight=1)
+
+            actions = ttk.Frame(container)
+            actions.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+            actions.columnconfigure(0, weight=1)
+
+            def _save_options() -> None:
+                window = self._convert_hook_options_window
+                if window is not None:
+                    window.withdraw()
+
+            ttk.Button(actions, text="Reset", command=self._reset_convert_hook_options).grid(
+                row=0, column=0, sticky="w"
+            )
+            ttk.Button(actions, text="Save", command=_save_options).grid(row=0, column=1, sticky="e")
+            def _close_options() -> None:
+                window = self._convert_hook_options_window
+                if window is not None:
+                    window.withdraw()
+
+            ttk.Button(actions, text="Close", command=_close_options).grid(
+                row=0, column=2, sticky="e", padx=(8, 0)
+            )
+
+        try:
+            entry = converter_core.resolve_hook(hook_name)
+        except Exception:
+            return
+        preset = self._infer_hook_preset(entry)
+        hints = self._infer_hook_option_hints(entry)
+        if not preset:
+            return
+        self._render_convert_hook_form(preset, hints)
+        window = self._convert_hook_options_window
+        if window is not None:
+            window.deiconify()
+            window.lift()
+
+    def _collect_convert_hook_args(self) -> Optional[Dict[str, Dict[str, Any]]]:
+        hook_name = ""
+        if self._scan is not None:
+            hook_name = (getattr(self._scan, "_converter_hook_name", None) or "").strip()
+        if not hook_name:
+            logger.debug("No converter hook name found for hook args.")
+            return None
+        if not self._convert_hook_option_vars:
+            logger.debug("No converter hook option vars set for %s.", hook_name)
+            return None
+        values: Dict[str, Any] = {}
+        for key, var in self._convert_hook_option_vars.items():
+            choices = self._convert_hook_option_choices.get(key)
+            if choices is not None:
+                raw = var.get()
+                values[key] = choices.get(raw, raw)
+                continue
+            default = self._convert_hook_option_defaults.get(key)
+            values[key] = self._coerce_hook_value(var.get(), default)
+        hook_args = {hook_name: values}
+        logger.debug("Convert hook args resolved: %s", hook_args)
+        return hook_args
 
     def _update_convert_space_controls(self) -> None:
         if self._convert_use_viewer_pose_var.get():
@@ -1126,6 +1589,8 @@ class ConvertTabMixin:
 
         flip_x, flip_y, flip_z = self._convert_flip_settings()
         try:
+            hook_args = self._collect_convert_hook_args()
+            logger.debug("Calling loader.convert hook_args_by_name=%s", hook_args)
             nii = self._loader.convert(
                 scan_id,
                 reco_id=self._current_reco_id,
@@ -1133,7 +1598,7 @@ class ConvertTabMixin:
                 space=cast(Any, space),
                 override_subject_type=subject_type,
                 override_subject_pose=subject_pose,
-                hook_args_by_name=None,
+                hook_args_by_name=hook_args,
             )
         except Exception as exc:
             self._set_convert_settings(f"Convert failed: {exc}")
