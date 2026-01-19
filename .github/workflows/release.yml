@@ -1,9 +1,9 @@
 name: Create Release
 
 on:
-  push:
-    tags:
-      - "*"
+  workflow_run:
+    workflows: ["Release On Merge"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -17,17 +17,46 @@ permissions:
 
 jobs:
   release:
-    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' }}
+    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     steps:
+      - name: Download release metadata
+        if: ${{ github.event_name == 'workflow_run' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          run-id: ${{ github.event.workflow_run.id }}
+          path: .
       - name: Resolve tag
         id: tag
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "created=true" >> "$GITHUB_OUTPUT"
           else
-            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            python3 - <<'PY'
+            import os
+            import json
+            from pathlib import Path
+
+            path = Path("release_metadata.json")
+            if not path.exists():
+                raise SystemExit("release_metadata.json not found")
+            data = json.loads(path.read_text(encoding="utf-8"))
+            tag = data.get("tag")
+            created = data.get("created", "false")
+            if not tag:
+                raise SystemExit("Tag not found in release metadata")
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+                handle.write(f"value={tag}\n")
+                handle.write(f"created={created}\n")
+            PY
           fi
+      - name: Ensure release needed
+        if: ${{ steps.tag.outputs.created != 'true' }}
+        run: |
+          echo "Release already exists or tag not created; skipping."
+          exit 0
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.tag.outputs.value }}
