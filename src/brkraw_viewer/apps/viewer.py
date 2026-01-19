@@ -268,6 +268,18 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._convert_flip_z_var = tk.BooleanVar(value=False)
         self._convert_sidecar_var = tk.BooleanVar(value=False)
         self._convert_sidecar_format_var = tk.StringVar(value="json")
+        self._convert_hook_name_var = tk.StringVar(value="None")
+        self._convert_hook_status_var = tk.StringVar(value="")
+        self._convert_hook_option_vars: Dict[str, tk.StringVar] = {}
+        self._convert_hook_option_defaults: Dict[str, Any] = {}
+        self._convert_hook_option_types: Dict[str, str] = {}
+        self._convert_hook_option_choices: Dict[str, Dict[str, Any]] = {}
+        self._convert_hook_option_rows: list[tk.Widget] = []
+        self._convert_hook_frame: Optional[ttk.LabelFrame] = None
+        self._convert_hook_options_container: Optional[ttk.Frame] = None
+        self._convert_hook_options_window: Optional[tk.Toplevel] = None
+        self._convert_hook_current_name = ""
+        self._convert_hook_check: Optional[ttk.Checkbutton] = None
 
         self._layout_info_spec_combo: Optional[ttk.Combobox] = None
         self._layout_metadata_spec_combo: Optional[ttk.Combobox] = None
@@ -2066,6 +2078,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._scan = self._study.avail.get(scan_id)
         self._update_viewer_hook_controls()
         self._refresh_addon_controls()
+        self._refresh_convert_hook_options()
         self._populate_reco_list(scan_id)
         self._update_params_summary()
         reco_ids = self._current_reco_ids()
