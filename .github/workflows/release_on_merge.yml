@@ -1,8 +1,8 @@
 name: Release On Merge
 
 on:
-  push:
-    branches: [main]
+  pull_request:
+    types: [closed]
 
 permissions:
   contents: write
@@ -10,58 +10,29 @@ permissions:
 
 jobs:
   tag_release:
-    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' }}
+    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' && github.event.pull_request.merged == true }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
       - name: Check release label
         id: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
         run: |
           python3 - <<'PY'
-          import json
           import os
-          from urllib import request
 
-          token = os.environ.get("GITHUB_TOKEN")
-          repo = os.environ["GITHUB_REPOSITORY"]
-          sha = os.environ["GITHUB_SHA"]
-
-          url = f"https://api.github.com/repos/{repo}/commits/{sha}/pulls?per_page=10"
-          req = request.Request(url)
-          req.add_header("Authorization", f"Bearer {token}")
-          req.add_header("Accept", "application/vnd.github+json")
-          with request.urlopen(req) as resp:
-              pulls = json.loads(resp.read().decode("utf-8"))
-
-          allowed = False
-          for pr in pulls:
-              if not pr.get("merged_at"):
-                  continue
-              labels = {label.get("name") for label in pr.get("labels", [])}
-              if "release" in labels:
-                  allowed = True
-                  break
-
+          labels = os.environ.get("PR_LABELS", "")
+          allowed = "release" in {label.strip() for label in labels.split(",") if label.strip()}
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"allowed={'true' if allowed else 'false'}\n")
           PY
-      - name: Detect version change
+        env:
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+      - name: Resolve version
         id: version
         run: |
-          base_sha="${{ github.event.before }}"
-          merge_sha="${{ github.sha }}"
-          echo "Inspecting src/brkraw_viewer/__init__.py at $merge_sha"
-          git show "$merge_sha:src/brkraw_viewer/__init__.py" || true
-          if ! git diff --name-only "$base_sha" "$merge_sha" | grep -Eq '^(src/brkraw_viewer/__init__.py|pyproject.toml)$'; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           version=$(python3 - <<'PY'
           import re
           from pathlib import Path
@@ -94,15 +65,19 @@ jobs:
           print(version)
           PY
           )
-          echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "value=$version" >> "$GITHUB_OUTPUT"
-      - name: Create and push tag
-        if: ${{ steps.release.outputs.allowed == 'true' && steps.version.outputs.changed == 'true' }}
+      - name: Check tag exists
+        id: tag
         run: |
           tag="${{ steps.version.outputs.value }}"
           if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "Tag $tag already exists. Skipping."
-            exit 0
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Create and push tag
+        if: ${{ steps.release.outputs.allowed == 'true' && steps.tag.outputs.exists == 'false' }}
+        run: |
+          tag="${{ steps.version.outputs.value }}"
           git tag "$tag" "${{ github.event.pull_request.merge_commit_sha }}"
           git push origin "$tag"
