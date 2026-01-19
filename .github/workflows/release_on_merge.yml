@@ -131,18 +131,16 @@ jobs:
           git tag "$tag" "${{ github.sha }}"
           git push origin "$tag"
       - name: Write release metadata
-        if: ${{ steps.release.outputs.allowed == 'true' }}
         run: |
           tag="${{ steps.version.outputs.value }}"
           created="false"
-          if [ "${{ steps.tag.outputs.exists }}" = "false" ]; then
+          if [ "${{ steps.release.outputs.allowed }}" = "true" ] && [ "${{ steps.tag.outputs.exists }}" = "false" ]; then
             created="true"
           fi
           cat > release_metadata.json <<EOF
           {"tag":"$tag","created":"$created"}
           EOF
       - name: Upload release metadata
-        if: ${{ steps.release.outputs.allowed == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: release-metadata
