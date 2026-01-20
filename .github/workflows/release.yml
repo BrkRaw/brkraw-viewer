@@ -1,9 +1,6 @@
 name: Create Release
 
 on:
-  workflow_run:
-    workflows: ["Release On Merge"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -14,34 +11,16 @@ on:
 permissions:
   contents: write
   discussions: write
-  actions: read
 
 jobs:
   release:
-    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
+    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Download release metadata
-        if: ${{ github.event_name == 'workflow_run' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: release-metadata
-          run-id: ${{ github.event.workflow_run.id }}
-          path: .
       - name: Resolve tag
         id: tag
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-            echo "created=true" >> "$GITHUB_OUTPUT"
-          else
-            python3 -c 'import os, json, sys; from pathlib import Path; path = Path("release_metadata.json"); if not path.exists(): sys.exit("release_metadata.json not found"); data = json.loads(path.read_text(encoding="utf-8")); tag = data.get("tag"); created = data.get("created", "false"); if not tag: sys.exit("Tag not found in release metadata"); open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8").write(f"value={tag}\\ncreated={created}\\n")'
-          fi
-      - name: Ensure release needed
-        if: ${{ steps.tag.outputs.created != 'true' }}
-        run: |
-          echo "Release already exists or tag not created; skipping."
-          exit 0
+          echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.tag.outputs.value }}
@@ -54,18 +33,6 @@ jobs:
           else
             echo "value=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Write release metadata
-        run: |
-          tag="${{ steps.tag.outputs.value }}"
-          prerelease="${{ steps.prerelease.outputs.value }}"
-          cat > release_metadata.json <<EOF
-          {"tag":"$tag","prerelease":"$prerelease"}
-          EOF
-      - name: Upload release metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-metadata
-          path: release_metadata.json
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
