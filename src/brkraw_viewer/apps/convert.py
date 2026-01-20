@@ -8,6 +8,7 @@ import tkinter as tk
 import logging
 import json
 import yaml
+import numpy as np
 from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, cast, get_args, get_origin, get_type_hints
@@ -1256,6 +1257,14 @@ class ConvertTabMixin:
             return path
         return None
 
+    def _active_reco_id(self) -> Optional[int]:
+        if self._current_reco_id is not None:
+            return self._current_reco_id
+        if self._scan is None:
+            return None
+        reco_ids = list(self._scan.avail.keys())
+        return reco_ids[0] if reco_ids else None
+
     def _resolve_layout_sources(
         self,
         *,
@@ -1336,7 +1345,7 @@ class ConvertTabMixin:
         return layout_template, layout_entries, slicepack_suffix, None
 
     def _layout_entries_active(self) -> bool:
-        layout_template, layout_entries, _, _ = self._resolve_layout_sources(reco_id=self._current_reco_id)
+        layout_template, layout_entries, _, _ = self._resolve_layout_sources(reco_id=self._active_reco_id())
         return layout_template is None and bool(layout_entries)
 
     def _convert_subject_orientation(self) -> tuple[Optional[SubjectType], Optional[SubjectPose]]:
@@ -1371,22 +1380,29 @@ class ConvertTabMixin:
         )
 
     def _estimate_slicepack_count(self) -> int:
-        if self._scan is None or self._current_reco_id is None:
+        if self._scan is None:
             return 0
+        reco_id = self._active_reco_id()
+        if reco_id is None:
+            return 1
         try:
-            dataobj = self._scan.get_dataobj(reco_id=self._current_reco_id)
+            dataobj = self._scan.get_dataobj(reco_id=reco_id)
         except Exception:
-            return 0
+            dataobj = None
         if isinstance(dataobj, tuple):
             return len(dataobj)
-        return 1 if dataobj is not None else 0
+        if dataobj is not None:
+            return 1
+        hook_name = getattr(self._scan, "_converter_hook_name", None)
+        return 1 if hook_name else 0
 
     _COUNTER_SENTINEL = 987654321
     _COUNTER_PLACEHOLDER = "<N>"
 
     def _planned_output_paths(self, *, preview: bool, count: Optional[int] = None) -> list[Path]:
-        if self._scan is None or self._current_reco_id is None:
+        if self._scan is None:
             return []
+        reco_id = self._active_reco_id()
         scan_id = getattr(self._scan, "scan_id", None)
         if scan_id is None:
             return []
@@ -1400,9 +1416,7 @@ class ConvertTabMixin:
             return []
         count = int(count)
 
-        layout_template, layout_entries, slicepack_suffix, context_map = self._resolve_layout_sources(
-            reco_id=self._current_reco_id
-        )
+        layout_template, layout_entries, slicepack_suffix, context_map = self._resolve_layout_sources(reco_id=reco_id)
 
         info_spec_path = self._layout_info_spec_path()
         metadata_spec_path = self._layout_metadata_spec_path()
@@ -1414,7 +1428,7 @@ class ConvertTabMixin:
                 scan_id,
                 context_map=context_map,
                 root=root,
-                reco_id=self._current_reco_id,
+                reco_id=reco_id,
                 override_info_spec=info_spec_path,
                 override_metadata_spec=metadata_spec_path,
             )
@@ -1439,7 +1453,7 @@ class ConvertTabMixin:
                     layout_template=layout_template,
                     context_map=context_map,
                     root=root,
-                    reco_id=self._current_reco_id,
+                    reco_id=reco_id,
                     counter=counter,
                     override_info_spec=info_spec_path,
                     override_metadata_spec=metadata_spec_path,
@@ -1519,8 +1533,8 @@ class ConvertTabMixin:
         return False
 
     def _preview_convert_outputs(self) -> None:
-        if self._scan is None or self._current_reco_id is None:
-            self._set_convert_settings("No scan/reco selected.")
+        if self._scan is None:
+            self._set_convert_settings("No scan selected.")
             self._set_convert_preview("")
             return
         scan_id = getattr(self._scan, "scan_id", None)
@@ -1528,6 +1542,7 @@ class ConvertTabMixin:
             self._set_convert_settings("Scan id unavailable.")
             self._set_convert_preview("")
             return
+        reco_id = self._active_reco_id()
 
         space = self._convert_space_var.get()
         subject_type, subject_pose = self._convert_subject_orientation()
@@ -1535,11 +1550,11 @@ class ConvertTabMixin:
 
         planned = self._planned_output_paths(preview=True)
         if not planned:
-            self._set_convert_settings("No output planned (missing data or reco).")
+            self._set_convert_settings("No output planned (missing data or layout).")
             self._set_convert_preview("")
             return
 
-        meta_text = self._preview_metadata_yaml(scan_id)
+        meta_text = self._preview_metadata_yaml(scan_id, reco_id=reco_id)
         self._set_convert_settings(meta_text)
 
         preview_list = list(planned)
@@ -1547,8 +1562,8 @@ class ConvertTabMixin:
             preview_list.extend(self._planned_sidecar_paths(planned))
         self._set_convert_preview("\n".join(str(p) for p in preview_list))
 
-    def _preview_metadata_yaml(self, scan_id: int) -> str:
-        layout_template, layout_entries, _, context_map = self._resolve_layout_sources(reco_id=self._current_reco_id)
+    def _preview_metadata_yaml(self, scan_id: int, *, reco_id: Optional[int]) -> str:
+        layout_template, layout_entries, _, context_map = self._resolve_layout_sources(reco_id=reco_id)
         info_spec_path = self._layout_info_spec_path()
         metadata_spec_path = self._layout_metadata_spec_path()
         try:
@@ -1557,13 +1572,24 @@ class ConvertTabMixin:
                 scan_id,
                 context_map=context_map,
                 root=resolve_root(None),
-                reco_id=self._current_reco_id,
+                reco_id=reco_id,
                 override_info_spec=info_spec_path,
                 override_metadata_spec=metadata_spec_path,
             )
         except Exception as exc:
             return f"Metadata preview failed:\n{exc}"
-        return yaml.safe_dump(info, sort_keys=False)
+        return yaml.safe_dump(self._sanitize_yaml(info), sort_keys=False)
+
+    def _sanitize_yaml(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(k): self._sanitize_yaml(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._sanitize_yaml(v) for v in value]
+        if isinstance(value, np.ndarray):
+            return self._sanitize_yaml(value.tolist())
+        if isinstance(value, np.generic):
+            return value.item()
+        return value
 
     def _planned_sidecar_paths(self, planned: list[Path]) -> list[Path]:
         suffix = ".json" if self._convert_sidecar_format_var.get() == "json" else ".yaml"
@@ -1576,13 +1602,14 @@ class ConvertTabMixin:
         return sidecars
 
     def _convert_current_scan(self) -> None:
-        if self._loader is None or self._scan is None or self._current_reco_id is None:
+        if self._loader is None or self._scan is None:
             self._status_var.set("No scan selected.")
             return
         scan_id = getattr(self._scan, "scan_id", None)
         if scan_id is None:
             self._status_var.set("Scan id unavailable.")
             return
+        reco_id = self._active_reco_id()
 
         subject_type, subject_pose = self._convert_subject_orientation()
         space = self._convert_space_var.get()
@@ -1593,7 +1620,7 @@ class ConvertTabMixin:
             logger.debug("Calling loader.convert hook_args_by_name=%s", hook_args)
             nii = self._loader.convert(
                 scan_id,
-                reco_id=self._current_reco_id,
+                reco_id=reco_id,
                 format="nifti",
                 space=cast(Any, space),
                 override_subject_type=subject_type,
@@ -1619,7 +1646,7 @@ class ConvertTabMixin:
         output_path = planned[0].parent
         output_path.mkdir(parents=True, exist_ok=True)
 
-        sidecar_meta = self._build_sidecar_metadata(scan_id, self._current_reco_id)
+        sidecar_meta = self._build_sidecar_metadata(scan_id, reco_id)
 
         for dest, img in zip(planned, nii_list):
             if flip_x or flip_y or flip_z:
