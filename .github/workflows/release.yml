@@ -35,23 +35,7 @@ jobs:
             echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
             echo "created=true" >> "$GITHUB_OUTPUT"
           else
-            python3 - <<'PY'
-            import os
-            import json
-            from pathlib import Path
-
-            path = Path("release_metadata.json")
-            if not path.exists():
-                raise SystemExit("release_metadata.json not found")
-            data = json.loads(path.read_text(encoding="utf-8"))
-            tag = data.get("tag")
-            created = data.get("created", "false")
-            if not tag:
-                raise SystemExit("Tag not found in release metadata")
-            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-                handle.write(f"value={tag}\n")
-                handle.write(f"created={created}\n")
-            PY
+            python3 -c 'import os, json, sys; from pathlib import Path; path = Path("release_metadata.json"); if not path.exists(): sys.exit("release_metadata.json not found"); data = json.loads(path.read_text(encoding="utf-8")); tag = data.get("tag"); created = data.get("created", "false"); if not tag: sys.exit("Tag not found in release metadata"); open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8").write(f"value={tag}\\ncreated={created}\\n")'
           fi
       - name: Ensure release needed
         if: ${{ steps.tag.outputs.created != 'true' }}
