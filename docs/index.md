@@ -31,7 +31,8 @@ Extensions are delivered as viewer hooks discovered via the
 without changing the core viewer, and they coexist with converter hooks and
 CLI hooks so UI features can build on the same rule/spec system as brkraw.
 For converter hooks, the Convert tab can render hook option forms when the
-hook exposes presets. Example (minimal):
+hook exposes presets. BrkRaw splits hook args by function signature, so any
+remaining hook-only kwargs are the ones shown in the GUI. Example (minimal):
 
 ```python
 from dataclasses import dataclass
