@@ -1,8 +1,7 @@
 name: Release On Merge
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -130,18 +129,3 @@ jobs:
           tag="${{ steps.version.outputs.value }}"
           git tag "$tag" "${{ github.sha }}"
           git push origin "$tag"
-      - name: Write release metadata
-        run: |
-          tag="${{ steps.version.outputs.value }}"
-          created="false"
-          if [ "${{ steps.release.outputs.allowed }}" = "true" ] && [ "${{ steps.tag.outputs.exists }}" = "false" ]; then
-            created="true"
-          fi
-          cat > release_metadata.json <<EOF
-          {"tag":"$tag","created":"$created"}
-          EOF
-      - name: Upload release metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-metadata
-          path: release_metadata.json
