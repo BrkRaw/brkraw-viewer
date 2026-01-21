@@ -96,6 +96,7 @@ class ConvertTabMixin:
     _convert_hook_option_types: Dict[str, str]
     _convert_hook_option_choices: Dict[str, Dict[str, Any]]
     _convert_hook_option_rows: list[tk.Widget]
+    _convert_hook_option_sources: Dict[str, set[str]]
     _convert_hook_options_container: Optional[ttk.Frame]
     _convert_hook_options_window: Optional[tk.Toplevel]
     _convert_hook_edit_button: Optional[ttk.Button]
@@ -104,6 +105,7 @@ class ConvertTabMixin:
     _viewer_hook_enabled_var: tk.BooleanVar
 
     def _on_viewer_hook_toggle(self) -> None: ...
+    def _on_hook_options_applied(self) -> None: ...
 
     _subject_type_var: tk.StringVar
     _pose_primary_var: tk.StringVar
@@ -127,6 +129,10 @@ class ConvertTabMixin:
             "scan",
             "scan_id",
             "reco_id",
+            "dataobj",
+            "dataobjs",
+            "affine",
+            "affines",
             "format",
             "space",
             "override_header",
@@ -441,6 +447,7 @@ class ConvertTabMixin:
             self._convert_hook_option_defaults = {}
             self._convert_hook_option_types = {}
             self._convert_hook_option_choices = {}
+            self._convert_hook_option_sources = {}
 
     def _infer_hook_preset_from_module(self, module: object) -> Dict[str, Any]:
         for attr in ("HOOK_PRESET", "HOOK_ARGS", "HOOK_DEFAULTS"):
@@ -557,6 +564,32 @@ class ConvertTabMixin:
                 hints[name] = annotation
         return hints
 
+    def _infer_hook_option_sources(
+        self,
+        entry: Mapping[str, Any],
+        preset: Mapping[str, Any],
+    ) -> Dict[str, set[str]]:
+        sources: Dict[str, set[str]] = {"get_dataobj": set(), "get_affine": set(), "convert": set()}
+        for name in ("get_dataobj", "get_affine", "convert"):
+            func = entry.get(name)
+            if not callable(func):
+                continue
+            try:
+                sig = inspect.signature(func)
+            except (TypeError, ValueError):
+                continue
+            for param in sig.parameters.values():
+                if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                    continue
+                if param.name in self._PRESET_IGNORE_PARAMS:
+                    continue
+                sources[name].add(param.name)
+        known = set().union(*sources.values()) if sources else set()
+        unknown = {key for key in preset.keys() if key not in known}
+        if unknown:
+            sources["unknown"] = unknown
+        return sources
+
     def _format_hook_type(self, value: Any, hint: Any = None) -> str:
         if hint is not None:
             origin = get_origin(hint)
@@ -632,6 +665,7 @@ class ConvertTabMixin:
         self._convert_hook_name_var.set(hook_name or "None")
         if not hook_name:
             self._convert_hook_status_var.set("No converter hook detected for this scan.")
+            self._convert_hook_option_sources = {}
             if self._convert_hook_check is not None:
                 self._convert_hook_check.configure(state="disabled")
             if self._convert_hook_edit_button is not None:
@@ -641,6 +675,7 @@ class ConvertTabMixin:
             entry = converter_core.resolve_hook(hook_name)
         except Exception:
             self._convert_hook_status_var.set("Converter hook not available.")
+            self._convert_hook_option_sources = {}
             if self._convert_hook_check is not None:
                 self._convert_hook_check.configure(state="disabled")
             if self._convert_hook_edit_button is not None:
@@ -650,11 +685,13 @@ class ConvertTabMixin:
         hints = self._infer_hook_option_hints(entry)
         if not preset:
             self._convert_hook_status_var.set("Hook has no exposed options.")
+            self._convert_hook_option_sources = {}
             if self._convert_hook_check is not None:
                 self._convert_hook_check.configure(state="normal")
             if self._convert_hook_edit_button is not None:
                 self._convert_hook_edit_button.configure(state="disabled")
             return
+        self._convert_hook_option_sources = self._infer_hook_option_sources(entry, preset)
         self._convert_hook_status_var.set("")
         if self._convert_hook_check is not None:
             self._convert_hook_check.configure(state="normal")
@@ -774,15 +811,12 @@ class ConvertTabMixin:
             actions.grid(row=2, column=0, sticky="ew", pady=(8, 0))
             actions.columnconfigure(0, weight=1)
 
-            def _save_options() -> None:
-                window = self._convert_hook_options_window
-                if window is not None:
-                    window.withdraw()
-
             ttk.Button(actions, text="Reset", command=self._reset_convert_hook_options).grid(
                 row=0, column=0, sticky="w"
             )
-            ttk.Button(actions, text="Save", command=_save_options).grid(row=0, column=1, sticky="e")
+            ttk.Button(actions, text="Apply", command=self._apply_convert_hook_options).grid(
+                row=0, column=1, sticky="e"
+            )
             def _close_options() -> None:
                 window = self._convert_hook_options_window
                 if window is not None:
@@ -805,6 +839,11 @@ class ConvertTabMixin:
         if window is not None:
             window.deiconify()
             window.lift()
+
+    def _apply_convert_hook_options(self) -> None:
+        callback = getattr(self, "_on_hook_options_applied", None)
+        if callable(callback):
+            callback()
 
     def _collect_convert_hook_args(self) -> Optional[Dict[str, Dict[str, Any]]]:
         hook_name = ""
@@ -1621,7 +1660,6 @@ class ConvertTabMixin:
             nii = self._loader.convert(
                 scan_id,
                 reco_id=reco_id,
-                format="nifti",
                 space=cast(Any, space),
                 override_subject_type=subject_type,
                 override_subject_pose=subject_pose,

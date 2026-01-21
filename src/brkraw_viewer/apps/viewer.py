@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import inspect
 from collections import OrderedDict
 import tkinter as tk
 import tkinter.font as tkfont
@@ -56,6 +57,12 @@ class ViewerRenderer(Protocol):
         ...
 
     def set_zoom_callback(self, callback: Optional[Callable[[int], None]]) -> None:
+        ...
+
+    def set_capture_callback(self, callback: Optional[Callable[[str], None]]) -> None:
+        ...
+
+    def capture_view(self, view: str) -> Optional[Any]:
         ...
 
     def show_message_on(self, view: str, message: str, *, is_error: bool = False) -> None:
@@ -160,6 +167,9 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._viewer_hook_enabled_var = tk.BooleanVar(value=False)
         self._viewer_hook_name_var = tk.StringVar(value="")
         self._viewer_hook_frame: Optional[ttk.Frame] = None
+        self._viewer_hook_options_frame: Optional[ttk.LabelFrame] = None
+        self._viewer_hook_option_rows: list[tk.Widget] = []
+        self._viewer_hook_options_button: Optional[ttk.Button] = None
 
         self._path_var = tk.StringVar(value=path or "")
         self._x_var = tk.IntVar(value=0)
@@ -181,7 +191,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._frame_label: Optional[ttk.Label] = None
         self._slicepack_box: Optional[ttk.Frame] = None
         self._viewer_hook_check: Optional[ttk.Checkbutton] = None
-        self._viewer_hook_label: Optional[ttk.Label] = None
+        self._viewer_hook_label: Optional[ttk.Entry] = None
         self._view_crop_origins: Dict[str, Tuple[int, int]] = {"xy": (0, 0), "xz": (0, 0), "zy": (0, 0)}
 
         self._subject_type_var = tk.StringVar(value="Biped")
@@ -275,6 +285,7 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._convert_hook_option_types: Dict[str, str] = {}
         self._convert_hook_option_choices: Dict[str, Dict[str, Any]] = {}
         self._convert_hook_option_rows: list[tk.Widget] = []
+        self._convert_hook_option_sources: Dict[str, set[str]] = {}
         self._convert_hook_frame: Optional[ttk.LabelFrame] = None
         self._convert_hook_options_container: Optional[ttk.Frame] = None
         self._convert_hook_options_window: Optional[tk.Toplevel] = None
@@ -515,6 +526,8 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             viewer_adapter.set_click_callback(self._on_view_click)
         if hasattr(viewer_adapter, "set_zoom_callback"):
             viewer_adapter.set_zoom_callback(self._on_zoom_wheel)
+        if hasattr(viewer_adapter, "set_capture_callback"):
+            viewer_adapter.set_capture_callback(self._on_capture_viewport)
 
     def _build_extensions_tab(self, parent: tk.Misc) -> Optional[ttk.Frame]:
         if not self._viewer_hooks:
@@ -934,12 +947,16 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         viewer_top = ttk.Frame(viewer_tab)
         viewer_top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         viewer_top.columnconfigure(0, weight=1)
-        viewer_top.columnconfigure(1, weight=1)
+        viewer_top.columnconfigure(1, weight=0)
+        viewer_top.columnconfigure(2, weight=1)
         viewer_left_container = ttk.Frame(viewer_top, width=440)
         viewer_left_container.grid(row=0, column=0, sticky="n", padx=(0, 8))
         viewer_left_container.grid_propagate(False)
+        viewer_mid_container = ttk.Frame(viewer_top, width=160)
+        viewer_mid_container.grid(row=0, column=1, sticky="n", padx=(8, 8))
+        viewer_mid_container.grid_propagate(False)
         viewer_right_container = ttk.Frame(viewer_top, width=220)
-        viewer_right_container.grid(row=0, column=1, sticky="n", padx=(8, 0))
+        viewer_right_container.grid(row=0, column=2, sticky="n", padx=(8, 0))
         viewer_right_container.grid_propagate(False)
 
         viewer_left = ttk.Frame(viewer_left_container)
@@ -993,34 +1010,20 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._subject_reset_button.grid(row=1, column=3, rowspan=2, sticky="ns", padx=(12, 0), pady=(2, 0))
         self._subject_reset_tooltip = _Tooltip(self._subject_reset_button, lambda: "Reset subject/pose")
 
-        viewer_right = ttk.Frame(viewer_right_container)
-        viewer_right.place(relx=0.5, rely=0.0, anchor="n", width=220)
-        viewer_right.columnconfigure(0, weight=1)
+        viewer_mid = ttk.Frame(viewer_mid_container)
+        viewer_mid.place(relx=0.5, rely=0.0, anchor="n", width=160)
+        viewer_mid.columnconfigure(0, weight=1)
 
         self._crosshair_check = ttk.Checkbutton(
-            viewer_right,
+            viewer_mid,
             text="Crosshair",
             variable=self._show_crosshair_var,
             command=self._update_plot,
         )
         self._crosshair_check.grid(row=0, column=0, pady=(0, 4))
 
-        hook_box = ttk.Frame(viewer_right)
-        hook_box.grid(row=1, column=0, pady=(4, 4))
-        self._viewer_hook_frame = hook_box
-        self._viewer_hook_check = ttk.Checkbutton(
-            hook_box,
-            text="Hook",
-            variable=self._viewer_hook_enabled_var,
-            command=self._on_viewer_hook_toggle,
-        )
-        self._viewer_hook_check.pack(side=tk.LEFT, padx=(0, 6))
-        self._viewer_hook_label = ttk.Label(hook_box, textvariable=self._viewer_hook_name_var)
-        self._viewer_hook_label.pack(side=tk.LEFT)
-        hook_box.grid_remove()
-
-        zoom_row = ttk.Frame(viewer_right)
-        zoom_row.grid(row=2, column=0, pady=(4, 0))
+        zoom_row = ttk.Frame(viewer_mid)
+        zoom_row.grid(row=1, column=0, pady=(4, 0))
         ttk.Label(zoom_row, text="Zoom").pack(side=tk.LEFT, padx=(0, 4))
         self._zoom_scale = tk.Scale(
             zoom_row,
@@ -1035,22 +1038,68 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._zoom_scale.pack(side=tk.LEFT)
         self._zoom_scale.configure(variable=self._zoom_var)
 
+        viewer_right = ttk.Frame(viewer_right_container)
+        viewer_right.place(relx=0.5, rely=0.0, anchor="n", width=220)
+        viewer_right.columnconfigure(0, weight=1)
+
+        hook_box = ttk.Frame(viewer_right)
+        hook_box.grid(row=0, column=0, pady=(0, 4), sticky="ew")
+        hook_box.columnconfigure(1, weight=1)
+        self._viewer_hook_frame = hook_box
+        ttk.Label(hook_box, text="Available Hook").grid(row=0, column=0, columnspan=2, sticky="w")
+        self._viewer_hook_check = ttk.Checkbutton(
+            hook_box,
+            text="Apply",
+            variable=self._viewer_hook_enabled_var,
+            command=self._on_viewer_hook_toggle,
+        )
+        self._viewer_hook_check.grid(row=1, column=0, sticky="w", padx=(0, 6))
+        self._viewer_hook_label = ttk.Entry(
+            hook_box,
+            textvariable=self._viewer_hook_name_var,
+            state="readonly",
+            width=18,
+        )
+        self._viewer_hook_label.grid(row=1, column=1, sticky="ew")
+        self._viewer_hook_options_button = ttk.Button(
+            hook_box,
+            text="Hook Options",
+            command=self._open_convert_hook_options,
+        )
+        self._viewer_hook_options_button.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        self._viewer_hook_options_frame = ttk.LabelFrame(
+            viewer_right,
+            text="Hook Options",
+            padding=(6, 6),
+        )
+        self._viewer_hook_options_frame.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self._viewer_hook_options_frame.columnconfigure(1, weight=1)
+        self._viewer_hook_options_frame.grid_remove()
+
         def _resize_viewer_top(_event: Optional[tk.Event] = None) -> None:
             width = max(viewer_top.winfo_width(), 1)
             max_left = 440
+            max_mid = 170
             max_right = 220
-            gap = 16
-            right_width = min(max_right, max(0, width // 3))
-            left_width = min(max_left, max(0, width - right_width - gap))
+            gap = 24
+            right_width = min(max_right, max(160, width // 4))
+            mid_width = min(max_mid, max(140, width // 6))
+            left_width = min(max_left, max(0, width - right_width - mid_width - gap))
             right_width = max(right_width, 1)
+            mid_width = max(mid_width, 1)
             left_width = max(left_width, 1)
             left_height = max(viewer_left.winfo_reqheight(), 1)
+            mid_height = max(viewer_mid.winfo_reqheight(), 1)
             right_height = max(viewer_right.winfo_reqheight(), 1)
             viewer_left_container.configure(width=left_width)
+            viewer_mid_container.configure(width=mid_width)
             viewer_right_container.configure(width=right_width)
             viewer_left_container.configure(height=left_height)
+            viewer_mid_container.configure(height=mid_height)
             viewer_right_container.configure(height=right_height)
             viewer_left.place_configure(width=left_width)
+            viewer_mid.place_configure(width=mid_width)
             viewer_right.place_configure(width=right_width)
 
         viewer_top.bind("<Configure>", _resize_viewer_top)
@@ -4537,6 +4586,30 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         subj_type, subj_pose = self._infer_subject_type_pose_from_reco(reco_id=reco_id)
         self._apply_subject_defaults(subj_type=subj_type, subj_pose=subj_pose, update_convert=True)
 
+    def _on_capture_viewport(self, view: str) -> None:
+        viewer = self._viewer
+        if viewer is None or not hasattr(viewer, "capture_view"):
+            return
+        image = viewer.capture_view(view)
+        if image is None:
+            self._status_var.set("No image available to capture.")
+            return
+        scan_id = getattr(self._scan, "scan_id", None)
+        base = f"scan{scan_id}_{view}" if scan_id is not None else f"viewport_{view}"
+        path = filedialog.asksaveasfilename(
+            title="Save viewport image",
+            defaultextension=".png",
+            initialfile=f"{base}.png",
+            filetypes=[("PNG Image", "*.png")],
+        )
+        if not path:
+            return
+        try:
+            image.save(path)
+            self._status_var.set(f"Saved viewport image: {path}")
+        except Exception as exc:
+            self._status_var.set(f"Capture failed: {exc}")
+
     def _on_subject_reset(self) -> None:
         if self._current_reco_id is None:
             return
@@ -4629,8 +4702,11 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
     def _safe_get_affine(self, *, reco_id: int, **kwargs: Any) -> Any:
         if self._scan is None:
             return None
+        hook_kwargs = {}
+        if self._viewer_hook_enabled_var.get():
+            hook_kwargs = self._viewer_hook_kwargs("get_affine", self._scan.get_affine)
         try:
-            return self._scan.get_affine(reco_id=reco_id, **kwargs)
+            return self._scan.get_affine(reco_id=reco_id, **{**hook_kwargs, **kwargs})
         except TypeError:
             return self._scan.get_affine(reco_id=reco_id)
 
@@ -4766,6 +4842,14 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         scan = self._scan
         if scan is None:
             return None
+        hook_kwargs = {}
+        if self._viewer_hook_enabled_var.get():
+            hook_kwargs = self._viewer_hook_kwargs("get_dataobj", scan.get_dataobj)
+        if hook_kwargs:
+            try:
+                return scan.get_dataobj(reco_id=reco_id, **hook_kwargs)
+            except TypeError:
+                return scan.get_dataobj(reco_id=reco_id)
         if not self._cache_enabled or self._cache_max_items == 0:
             return scan.get_dataobj(reco_id=reco_id)
         key = self._cache_key(reco_id)
@@ -4827,17 +4911,149 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         scan = self._scan
         if scan is None:
             self._viewer_hook_enabled_var.set(False)
-            hook_frame.grid_remove()
+            self._viewer_hook_name_var.set("None")
+            if self._viewer_hook_check is not None:
+                self._viewer_hook_check.configure(state="disabled")
+            if self._viewer_hook_options_button is not None:
+                self._viewer_hook_options_button.configure(state="disabled")
+            if self._viewer_hook_options_frame is not None:
+                self._viewer_hook_options_frame.grid_remove()
             return
         hook_name = getattr(scan, "_converter_hook_name", None)
         if not isinstance(hook_name, str) or not hook_name.strip():
             self._viewer_hook_enabled_var.set(False)
-            hook_frame.grid_remove()
+            self._viewer_hook_name_var.set("None")
+            if self._viewer_hook_check is not None:
+                self._viewer_hook_check.configure(state="disabled")
+            if self._viewer_hook_options_button is not None:
+                self._viewer_hook_options_button.configure(state="disabled")
+            if self._viewer_hook_options_frame is not None:
+                self._viewer_hook_options_frame.grid_remove()
             return
         self._viewer_hook_name_var.set(hook_name)
         attached = getattr(scan, "_converter_hook", None) is not None
         self._viewer_hook_enabled_var.set(attached)
-        hook_frame.grid()
+        if self._viewer_hook_check is not None:
+            self._viewer_hook_check.configure(state="normal")
+        if self._viewer_hook_options_button is not None:
+            self._viewer_hook_options_button.configure(state="normal")
+        self._refresh_viewer_hook_options()
+
+    def _clear_viewer_hook_option_rows(self) -> None:
+        for widget in self._viewer_hook_option_rows:
+            try:
+                widget.destroy()
+            except Exception:
+                pass
+        self._viewer_hook_option_rows = []
+
+    def _viewer_hook_convert_keys(self, entry: Mapping[str, Any]) -> set[str]:
+        func = entry.get("convert")
+        if not callable(func):
+            return set()
+        try:
+            sig = inspect.signature(func)
+        except (TypeError, ValueError):
+            return set()
+        keys: set[str] = set()
+        for param in sig.parameters.values():
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+            if param.name in self._PRESET_IGNORE_PARAMS:
+                continue
+            keys.add(param.name)
+        return keys
+
+    def _filter_hook_kwargs(self, func: Any, values: Mapping[str, Any]) -> Dict[str, Any]:
+        if not values:
+            return {}
+        try:
+            sig = inspect.signature(func)
+        except (TypeError, ValueError):
+            return dict(values)
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                return dict(values)
+        allowed = {
+            param.name
+            for param in sig.parameters.values()
+            if param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        }
+        return {key: value for key, value in values.items() if key in allowed}
+
+    def _viewer_hook_values(self) -> Dict[str, Any]:
+        hook_args = self._collect_convert_hook_args()
+        if not hook_args:
+            return {}
+        hook_name = (getattr(self._scan, "_converter_hook_name", None) or "").strip()
+        if not hook_name:
+            return {}
+        values = hook_args.get(hook_name)
+        return dict(values) if isinstance(values, Mapping) else {}
+
+    def _viewer_hook_kwargs(self, source: str, func: Any) -> Dict[str, Any]:
+        values = self._viewer_hook_values()
+        if not values:
+            return {}
+        allowed = self._convert_hook_option_sources.get(source)
+        if allowed is not None and allowed:
+            return {key: value for key, value in values.items() if key in allowed}
+        return self._filter_hook_kwargs(func, values)
+
+    def _refresh_viewer_hook_options(self) -> None:
+        frame = self._viewer_hook_options_frame
+        if frame is None:
+            return
+        hook_name = ""
+        if self._scan is not None:
+            hook_name = (getattr(self._scan, "_converter_hook_name", None) or "").strip()
+        if not hook_name:
+            frame.grid_remove()
+            self._clear_viewer_hook_option_rows()
+            return
+        try:
+            entry = converter_core.resolve_hook(hook_name)
+        except Exception:
+            frame.grid_remove()
+            self._clear_viewer_hook_option_rows()
+            return
+        self._refresh_convert_hook_options(render_form=False)
+        allowed = set(self._convert_hook_option_vars.keys())
+        if allowed:
+            convert_keys = self._convert_hook_option_sources.get("convert")
+            if convert_keys is None:
+                convert_keys = self._viewer_hook_convert_keys(entry)
+            allowed -= convert_keys
+        if not allowed:
+            frame.grid_remove()
+            self._clear_viewer_hook_option_rows()
+            return
+        self._render_viewer_hook_options(sorted(allowed))
+        frame.grid()
+
+    def _render_viewer_hook_options(self, keys: list[str]) -> None:
+        frame = self._viewer_hook_options_frame
+        if frame is None:
+            return
+        self._clear_viewer_hook_option_rows()
+        ttk.Label(frame, text="Key").grid(row=0, column=0, sticky="w")
+        ttk.Label(frame, text="Value").grid(row=0, column=1, sticky="w")
+        self._viewer_hook_option_rows.extend(list(frame.grid_slaves(row=0)))
+        for row, key in enumerate(keys, start=1):
+            var = self._convert_hook_option_vars.get(key)
+            if var is None:
+                default = self._convert_hook_option_defaults.get(key)
+                var = tk.StringVar(value="" if default is None else str(default))
+                self._convert_hook_option_vars[key] = var
+            key_label = ttk.Label(frame, text=key)
+            key_label.grid(row=row, column=0, sticky="w", padx=(0, 6), pady=2)
+            choices = self._convert_hook_option_choices.get(key)
+            if choices:
+                widget = ttk.Combobox(frame, values=tuple(choices.keys()), textvariable=var, state="readonly")
+            else:
+                widget = ttk.Entry(frame, textvariable=var)
+            widget.grid(row=row, column=1, sticky="ew", pady=2)
+            self._viewer_hook_option_rows.extend([key_label, widget])
 
     def _on_viewer_hook_toggle(self) -> None:
         scan = self._scan
@@ -4875,6 +5091,15 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._clear_scan_cache(scan_id)
         self._mark_viewer_dirty()
         self._maybe_load_viewer()
+        self._refresh_viewer_hook_options()
+
+    def _on_hook_options_applied(self) -> None:
+        if self._scan is None:
+            return
+        self._clear_data_cache()
+        self._mark_viewer_dirty()
+        self._maybe_load_viewer()
+        self._refresh_viewer_hook_options()
 
     def _on_close(self) -> None:
         self._clear_data_cache()
