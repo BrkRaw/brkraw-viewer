@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from pathlib import Path
 from typing import List
 
@@ -34,6 +35,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[na
 
 
 def _run_viewer(args: argparse.Namespace) -> int:
+    logger = logging.getLogger("brkraw.viewer")
     commands = {"init", "register", "unregister", "list"}
     paths: List[str] = list(args.path or [])
     if paths and paths[0] in commands:
@@ -50,7 +52,27 @@ def _run_viewer(args: argparse.Namespace) -> int:
     if len(paths) > 1:
         print("Error: too many paths provided for viewer launch.", flush=True)
         return 2
-    path = paths[0] if paths else None
+    path = paths[0] if paths else os.environ.get("BRKRAW_PATH")
+    if not paths and path:
+        logger.debug("Using BRKRAW_PATH for viewer launch: %s", path)
+    if args.scan is None:
+        env_scan = os.environ.get("BRKRAW_SCAN_ID")
+        if env_scan:
+            try:
+                args.scan = int(env_scan)
+                logger.debug("Using BRKRAW_SCAN_ID for viewer launch: %s", env_scan)
+            except ValueError:
+                print(f"Error: invalid BRKRAW_SCAN_ID: {env_scan}", flush=True)
+                return 2
+    if args.reco is None:
+        env_reco = os.environ.get("BRKRAW_RECO_ID")
+        if env_reco:
+            try:
+                args.reco = int(env_reco)
+                logger.debug("Using BRKRAW_RECO_ID for viewer launch: %s", env_reco)
+            except ValueError:
+                print(f"Error: invalid BRKRAW_RECO_ID: {env_reco}", flush=True)
+                return 2
     return launch(
         path=path,
         scan_id=args.scan,
