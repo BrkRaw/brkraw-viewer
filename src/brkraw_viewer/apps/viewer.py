@@ -1070,15 +1070,6 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         )
         self._viewer_hook_options_button.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
-        self._viewer_hook_options_frame = ttk.LabelFrame(
-            viewer_right,
-            text="Hook Options",
-            padding=(6, 6),
-        )
-        self._viewer_hook_options_frame.grid(row=1, column=0, sticky="ew", pady=(4, 0))
-        self._viewer_hook_options_frame.columnconfigure(1, weight=1)
-        self._viewer_hook_options_frame.grid_remove()
-
         def _resize_viewer_top(_event: Optional[tk.Event] = None) -> None:
             width = max(viewer_top.winfo_width(), 1)
             max_left = 440
@@ -5404,6 +5395,10 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
             return None
         data = self._data
         if data.ndim > 3:
+            # Check if this is RGB data (last dim 3, and exactly 4D)
+            if data.ndim == 4 and data.shape[3] == 3:
+                return data
+
             slicer: list[slice | int] = [slice(None)] * data.ndim
             frame_axis = 3
             frame = int(self._frame_var.get())
@@ -5436,9 +5431,16 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         y_idx = int(self._y_var.get())
         z_idx = int(self._z_var.get())
 
-        img_zy = data[x_idx, :, :]  # (y, z)
-        img_xy = data[:, :, z_idx].T  # (y, x)
-        img_xz = data[:, y_idx, :].T  # (z, x)
+        if data.ndim == 4 and data.shape[3] == 3:
+            # RGB data (X, Y, Z, 3)
+            img_zy = data[x_idx, :, :, :]  # (y, z, 3)
+            img_xy = data[:, :, z_idx, :].transpose(1, 0, 2)  # (y, x, 3)
+            img_xz = data[:, y_idx, :, :].transpose(1, 0, 2)  # (z, x, 3)
+        else:
+            # Grayscale data (X, Y, Z)
+            img_zy = data[x_idx, :, :]  # (y, z)
+            img_xy = data[:, :, z_idx].T  # (y, x)
+            img_xz = data[:, y_idx, :].T  # (z, x)
 
         return {
             "zy": (img_zy, (float(rz), float(ry))),

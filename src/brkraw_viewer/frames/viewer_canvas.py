@@ -229,19 +229,26 @@ class OrthogonalCanvas(ttk.Frame):
         img = np.asarray(img)
         if np.iscomplexobj(img):
             img = np.abs(img)
+        
+        if img.ndim == 3 and img.shape[2] == 3:
+            # RGB mode
+            img_uint8 = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+            img_display = np.flipud(img_uint8)
+            pil_img = Image.fromarray(img_display, mode="RGB")
         else:
+            # Grayscale mode
             try:
                 img = img.astype(float, copy=False)
             except Exception:
                 img = img.astype(np.float32, copy=False)
-        vmin, vmax = np.nanpercentile(img, (1, 99))
-        if np.isclose(vmin, vmax):
-            vmax = vmin + 1.0
-        img_norm = np.clip((img - vmin) / (vmax - vmin), 0.0, 1.0)
-        img_uint8 = (img_norm * 255).astype(np.uint8)
-        img_display = np.flipud(img_uint8)
+            vmin, vmax = np.nanpercentile(img, (1, 99))
+            if np.isclose(vmin, vmax):
+                vmax = vmin + 1.0
+            img_norm = np.clip((img - vmin) / (vmax - vmin), 0.0, 1.0)
+            img_uint8 = (img_norm * 255).astype(np.uint8)
+            img_display = np.flipud(img_uint8)
+            pil_img = Image.fromarray(img_display, mode="L")
 
-        pil_img = Image.fromarray(img_display, mode="L")
         canvas_w = max(canvas.winfo_width(), 1)
         canvas_h = max(canvas.winfo_height(), 1)
         width_mm = float(img.shape[1]) * res[0]
@@ -322,18 +329,25 @@ class OrthogonalCanvas(ttk.Frame):
         img = np.asarray(img)
         if np.iscomplexobj(img):
             img = np.abs(img)
+        
+        if img.ndim == 3 and img.shape[2] == 3:
+            # RGB mode
+            img_uint8 = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+            img_display = np.flipud(img_uint8)
+            pil_img = Image.fromarray(img_display, mode="RGB")
         else:
+            # Grayscale mode
             try:
                 img = img.astype(float, copy=False)
             except Exception:
                 img = img.astype(np.float32, copy=False)
-        vmin, vmax = np.nanpercentile(img, (1, 99))
-        if np.isclose(vmin, vmax):
-            vmax = vmin + 1.0
-        img_norm = np.clip((img - vmin) / (vmax - vmin), 0.0, 1.0)
-        img_uint8 = (img_norm * 255).astype(np.uint8)
-        img_display = np.flipud(img_uint8)
-        pil_img = Image.fromarray(img_display, mode="L").convert("RGB")
+            vmin, vmax = np.nanpercentile(img, (1, 99))
+            if np.isclose(vmin, vmax):
+                vmax = vmin + 1.0
+            img_norm = np.clip((img - vmin) / (vmax - vmin), 0.0, 1.0)
+            img_uint8 = (img_norm * 255).astype(np.uint8)
+            img_display = np.flipud(img_uint8)
+            pil_img = Image.fromarray(img_display, mode="L").convert("RGB")
 
         width_mm = float(img.shape[1]) * res[0]
         height_mm = float(img.shape[0]) * res[1]
