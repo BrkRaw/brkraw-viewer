@@ -7,6 +7,7 @@ import inspect
 import tkinter as tk
 import logging
 import json
+import hashlib
 import yaml
 import numpy as np
 from pathlib import Path
@@ -653,15 +654,56 @@ class ConvertTabMixin:
                     return text
         return text
 
+    def _apply_cached_hook_wrapper(self, hook_name: str, entry: Mapping[str, Any]) -> None:
+        if self._scan is None or not hook_name:
+            return
+        scan_id = getattr(self._scan, "scan_id", None)
+        if scan_id is None:
+            return
+
+        def _make_wrapper(func, func_name):
+            def wrapper(scan, *args, **kwargs):
+                reco_id = args[0] if args else kwargs.get("reco_id")
+                try:
+                    key_data = {"args": args, "kwargs": kwargs}
+                    key_str = json.dumps(key_data, sort_keys=True, default=str)
+                    key_hash = hashlib.md5(key_str.encode("utf-8")).hexdigest()
+                except Exception:
+                    key_hash = str(hash(str(args) + str(kwargs)))
+                
+                cache_key = f"__hook_cache__:{hook_name}:{func_name}:{key_hash}"
+                
+                if hasattr(scan, "_cache") and cache_key in scan._cache:
+                    logger.debug("Hook cache hit: %s", cache_key)
+                    return scan._cache[cache_key]
+                
+                result = func(scan, *args, **kwargs)
+                
+                if hasattr(scan, "_cache"):
+                    scan._cache[cache_key] = result
+                return result
+            return wrapper
+
+        wrapped_plugin = dict(entry)
+        if "get_dataobj" in wrapped_plugin:
+            wrapped_plugin["get_dataobj"] = _make_wrapper(wrapped_plugin["get_dataobj"], "get_dataobj")
+        if "get_affine" in wrapped_plugin:
+            wrapped_plugin["get_affine"] = _make_wrapper(wrapped_plugin["get_affine"], "get_affine")
+
+        self._loader.override_converter(scan_id, wrapped_plugin)
+
     def _refresh_convert_hook_options(self, *, render_form: bool = False) -> None:
         if self._convert_hook_frame is None:
             return
         hook_name = ""
         if self._scan is not None:
             hook_name = (getattr(self._scan, "_converter_hook_name", None) or "").strip()
-        if hook_name != self._convert_hook_current_name:
+        
+        name_changed = (hook_name != self._convert_hook_current_name)
+        if name_changed:
             self._convert_hook_current_name = hook_name
             self._clear_convert_hook_option_rows(clear_values=True)
+        
         self._convert_hook_name_var.set(hook_name or "None")
         if not hook_name:
             self._convert_hook_status_var.set("No converter hook detected for this scan.")
@@ -681,6 +723,10 @@ class ConvertTabMixin:
             if self._convert_hook_edit_button is not None:
                 self._convert_hook_edit_button.configure(state="disabled")
             return
+        
+        if name_changed:
+            self._apply_cached_hook_wrapper(hook_name, entry)
+
         preset = self._infer_hook_preset(entry)
         hints = self._infer_hook_option_hints(entry)
         if not preset:
@@ -1424,15 +1470,26 @@ class ConvertTabMixin:
         reco_id = self._active_reco_id()
         if reco_id is None:
             return 1
+
+        hook_name = getattr(self._scan, "_converter_hook_name", None)
+        hook_plugin = getattr(self._scan, "_converter_hook", None)
+        scan_id = getattr(self._scan, "scan_id", None)
+
+        if hook_name and hook_plugin and scan_id is not None:
+            self._loader.restore_converter(scan_id)
+
         try:
             dataobj = self._scan.get_dataobj(reco_id=reco_id)
         except Exception:
             dataobj = None
+
+        if hook_name and hook_plugin and scan_id is not None:
+            self._loader.override_converter(scan_id, hook_plugin)
+
         if isinstance(dataobj, tuple):
             return len(dataobj)
         if dataobj is not None:
             return 1
-        hook_name = getattr(self._scan, "_converter_hook_name", None)
         return 1 if hook_name else 0
 
     _COUNTER_SENTINEL = 987654321

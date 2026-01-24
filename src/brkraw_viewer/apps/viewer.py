@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import inspect
 from collections import OrderedDict
+import shutil
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
@@ -24,6 +25,7 @@ from brkraw.resolver import affine as affine_resolver
 from brkraw.resolver.affine import SubjectPose, SubjectType
 from brkraw.apps.loader import info as info_resolver
 from brkraw.core import config as config_core
+from brkraw.core import cache as cache_core
 from brkraw.core import layout as layout_core
 from brkraw.core.config import resolve_root
 from brkraw.specs import hook as converter_core
@@ -2132,6 +2134,15 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         if self._study is None:
             return
         self._scan = self._study.avail.get(scan_id)
+
+        # Ensure hook is disabled by default for new scan selection in viewer
+        self._viewer_hook_enabled_var.set(False)
+        if self._loader is not None and getattr(self._scan, "_converter_hook", None) is not None:
+            try:
+                self._loader.restore_converter(scan_id)
+            except Exception:
+                pass
+
         self._update_viewer_hook_controls()
         self._refresh_addon_controls()
         self._refresh_convert_hook_options()
@@ -5102,8 +5113,53 @@ class ViewerApp(ConvertTabMixin, ConfigTabMixin, tk.Tk):
         self._refresh_viewer_hook_options()
 
     def _on_close(self) -> None:
+        self._check_disk_cache_on_exit()
         self._clear_data_cache()
         self.destroy()
+
+    def _check_disk_cache_on_exit(self) -> None:
+        try:
+            config = config_core.load_config(root=None) or {}
+            cache_cfg = config.get("viewer", {}).get("cache", {})
+            cache_path_str = cache_cfg.get("path")
+            
+            cache_path = None
+            if isinstance(cache_path_str, str) and cache_path_str.strip():
+                cache_path = Path(cache_path_str)
+                if not cache_path.is_absolute():
+                    cache_path = resolve_root(None) / cache_path
+            
+            # If no config path, use the default cache location in the profile directory
+            if cache_path is None:
+                cache_path = resolve_root(None) / "cache"
+            
+            info = cache_core.get_info(path=cache_path)
+            total_size = info["size"]
+            count = info["count"]
+
+            if total_size <= 0:
+                return
+            
+            # format size
+            unit = "B"
+            size_val = float(total_size)
+            for u in ["B", "KB", "MB", "GB", "TB"]:
+                unit = u
+                if size_val < 1024:
+                    break
+                size_val /= 1024
+            size_str = f"{size_val:.2f} {unit}"
+            
+            if messagebox.askyesno(
+                "Clear Cache",
+                f"Disk cache at:\n{cache_path}\n\nSize: {size_str} ({count} files)\n\nClear this cache?",
+                parent=self,
+            ):
+                cache_core.clear(path=cache_path)
+                messagebox.showinfo("Cache Cleared", f"Cleared cache at {cache_path}", parent=self)
+
+        except Exception as exc:
+            logger.warning("Failed to check/clear disk cache: %s", exc)
 
     def _apply_slicepack(self, index: int) -> None:
         if self._slicepack_data is None or self._slicepack_affines is None:
