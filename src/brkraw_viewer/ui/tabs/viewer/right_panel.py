@@ -243,6 +243,7 @@ class ViewerRightPanel(ttk.Frame):
         views: dict,
         *,
         indices: Optional[tuple[int, int, int]] = None,
+        res: Optional[dict[str, tuple[float, float]]] = None,
         crosshair: Optional[dict] = None,
         show_crosshair: bool = False,
     ) -> None:
@@ -253,10 +254,12 @@ class ViewerRightPanel(ttk.Frame):
             self._zy.clear()
             return
         crosshair = crosshair or {}
+        res = res or {}
         if "xz" in views:
             self._xz.set_view(
                 base=views["xz"],
                 title=f"X-Z (y={indices[1] if indices else 0})",
+                res=res.get("xz", (1.0, 1.0)),
                 crosshair=crosshair.get("xz"),
                 show_crosshair=show_crosshair,
             )
@@ -264,6 +267,7 @@ class ViewerRightPanel(ttk.Frame):
             self._xy.set_view(
                 base=views["xy"],
                 title=f"X-Y (z={indices[2] if indices else 0})",
+                res=res.get("xy", (1.0, 1.0)),
                 crosshair=crosshair.get("xy"),
                 show_crosshair=show_crosshair,
             )
@@ -271,6 +275,7 @@ class ViewerRightPanel(ttk.Frame):
             self._zy.set_view(
                 base=views["zy"],
                 title=f"Z-Y (x={indices[0] if indices else 0})",
+                res=res.get("zy", (1.0, 1.0)),
                 crosshair=crosshair.get("zy"),
                 show_crosshair=show_crosshair,
             )

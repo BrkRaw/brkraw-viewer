@@ -309,13 +309,14 @@ class MainWindow(ttk.Frame):
         views: dict,
         *,
         indices: tuple[int, int, int] | None = None,
+        res: dict[str, tuple[float, float]] | None = None,
         crosshair: dict | None = None,
         show_crosshair: bool = False,
     ) -> None:
         tab = self.tabs.get_tab("Viewer")
         target = getattr(tab, "_tab_instance", None)
         if target is not None and hasattr(target, "set_views"):
-            target.set_views(views, indices=indices, crosshair=crosshair, show_crosshair=show_crosshair)
+            target.set_views(views, indices=indices, res=res, crosshair=crosshair, show_crosshair=show_crosshair)
 
     def set_viewer_subject_enabled(self, enabled: bool) -> None:
         tab = self.tabs.get_tab("Viewer")

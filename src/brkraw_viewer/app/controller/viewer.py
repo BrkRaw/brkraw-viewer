@@ -59,6 +59,7 @@ class ViewerController:
         self._viewer_raw_volume: Optional[object] = None
         self._viewer_raw_affine: Optional[object] = None
         self._viewer_shape: Optional[tuple[int, ...]] = None
+        self._viewer_res: tuple[float, float, float] = (1.0, 1.0, 1.0)
         self._viewer_job_id: Optional[str] = None
         self._viewer_hook_enabled = False
         self._viewer_hook_name: Optional[str] = None
@@ -373,6 +374,13 @@ class ViewerController:
             "xz": img_xz,
             "zy": img_zy,
         }
+        # Voxel spacing in RAS order to keep viewport aspect aligned with affine.
+        res_x, res_y, res_z = self._viewer_res
+        view_res = {
+            "xy": (res_y, res_x),
+            "xz": (res_z, res_x),
+            "zy": (res_y, res_z),
+        }
         crosshair = {
             "xy": (yi, xi),
             "xz": (zi, xi),
@@ -381,6 +389,7 @@ class ViewerController:
         self._view.set_viewer_views(
             views,
             indices=(xi, yi, zi),
+            res=view_res,
             crosshair=crosshair,
             show_crosshair=self.state.viewer.show_crosshair,
         )
@@ -393,6 +402,7 @@ class ViewerController:
         self._viewer_raw_volume = None
         self._viewer_raw_affine = None
         self._viewer_shape = None
+        self._viewer_res = (1.0, 1.0, 1.0)
         if self._view is None:
             return
         self._view.set_viewer_views({})
@@ -1429,13 +1439,39 @@ class ViewerController:
             return None
         affine_obj = affine if affine is not None else self._viewer_raw_affine
         if affine_obj is None:
+            self._viewer_res = (1.0, 1.0, 1.0)
             return np.asarray(raw)
         try:
             affine_arr = np.asarray(affine_obj, dtype=float)
         except Exception:
+            self._viewer_res = (1.0, 1.0, 1.0)
             return np.asarray(raw)
         try:
-            data, _ = reorient_to_ras(np.asarray(raw), affine_arr)
+            data, new_affine = reorient_to_ras(np.asarray(raw), affine_arr)
+            self._viewer_res = _affine_to_resolution(new_affine)
             return data
         except Exception:
+            self._viewer_res = _affine_to_resolution(affine_arr)
             return np.asarray(raw)
+
+
+def _affine_to_resolution(affine: np.ndarray) -> tuple[float, float, float]:
+    if affine.ndim != 2 or affine.shape[0] < 3 or affine.shape[1] < 3:
+        return (1.0, 1.0, 1.0)
+    axes = affine[:3, :3]
+    try:
+        res = np.linalg.norm(axes, axis=0)
+    except Exception:
+        return (1.0, 1.0, 1.0)
+    out: list[float] = []
+    for val in res.tolist():
+        try:
+            fval = float(val)
+        except Exception:
+            fval = 1.0
+        if not np.isfinite(fval) or fval <= 0.0:
+            fval = 1.0
+        out.append(fval)
+    while len(out) < 3:
+        out.append(1.0)
+    return (out[0], out[1], out[2])

@@ -40,10 +40,11 @@ class ViewerTab:
         views: dict,
         *,
         indices: tuple[int, int, int] | None = None,
+        res: dict[str, tuple[float, float]] | None = None,
         crosshair: dict | None = None,
         show_crosshair: bool = False,
     ) -> None:
-        self.right.set_views(views, indices=indices, crosshair=crosshair, show_crosshair=show_crosshair)
+        self.right.set_views(views, indices=indices, res=res, crosshair=crosshair, show_crosshair=show_crosshair)
 
     def set_subject_enabled(self, enabled: bool) -> None:
         self.top.set_subject_enabled(enabled)

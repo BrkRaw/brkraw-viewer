@@ -31,6 +31,7 @@ class ViewerView(Protocol):
         views: dict,
         *,
         indices: tuple[int, int, int] | None = None,
+        res: dict[str, tuple[float, float]] | None = None,
         crosshair: dict | None = None,
         show_crosshair: bool = False,
     ) -> None: ...
