@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk, filedialog
+import tkinter.font as tkfont
 from pathlib import Path
 from typing import Callable, List, Optional, Any
 
@@ -31,6 +32,8 @@ class RegistryWindow:
         self._window.title("Dataset Registry")
         self._window.geometry("920x420")
         self._window.minsize(760, 320)
+        self._center_on_parent(parent)
+        self._resize_job: Optional[str] = None
 
         toolbar = ttk.Frame(self._window, padding=(8, 8, 8, 4))
         toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -62,12 +65,9 @@ class RegistryWindow:
         vscroll.grid(row=0, column=1, sticky="ns")
         tree.configure(yscrollcommand=vscroll.set)
 
-        hscroll = ttk.Scrollbar(body, orient="horizontal", command=tree.xview)
-        hscroll.grid(row=1, column=0, sticky="ew")
-        tree.configure(xscrollcommand=hscroll.set)
-
         tree.tag_configure("missing", foreground="#cc3333")
         tree.bind("<Double-1>", self._on_double_click)
+        tree.bind("<Configure>", self._on_tree_resize)
 
         status_bar = ttk.Frame(self._window, padding=(8, 4))
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -76,6 +76,8 @@ class RegistryWindow:
         ttk.Label(status_bar, textvariable=self._status_var, anchor="w").grid(row=0, column=0, sticky="w")
         ttk.Button(status_bar, text="Load", command=self._open_selected).grid(row=0, column=1, sticky="e")
 
+        self._sort_key: Optional[str] = None
+        self._sort_desc = False
         self._configure_columns()
         self.refresh()
         self._update_add_menu_state()
@@ -100,6 +102,7 @@ class RegistryWindow:
             self._tree.insert("", "end", values=values, tags=(tag,))
         self._status_var.set(f"{len(entries)} item(s)")
         self._update_add_menu_state()
+        self._fit_columns()
 
     def set_status(self, text: str) -> None:
         self._status_var.set(text)
@@ -120,7 +123,7 @@ class RegistryWindow:
             title = str(col.get("title") or key)
             width = int(col.get("width") or 120)
             anchor = "w" if key in ("basename", "path") else "center"
-            self._tree.heading(key, text=title)
+            self._tree.heading(key, text=title, command=lambda k=key: self._on_sort(k))
             self._tree.column(key, width=width, anchor=anchor, stretch=True)
 
     def _resolve_entry_value(self, entry: dict, key: str) -> Any:
@@ -148,8 +151,16 @@ class RegistryWindow:
                     out.append(Path(str(raw)))
         return out
 
-    def _on_double_click(self, _evt: object) -> None:
+    def _on_double_click(self, event: tk.Event) -> Optional[str]:
+        region = self._tree.identify_region(int(event.x), int(event.y))
+        if region == "separator":
+            col_id = self._tree.identify_column(int(event.x))
+            key = self._column_key_from_id(col_id)
+            if key:
+                self._autofit_column(key)
+            return "break"
         self._open_selected()
+        return None
 
     def _open_selected(self) -> None:
         paths = self._selected_paths()
@@ -198,3 +209,129 @@ class RegistryWindow:
             self._add_menu.entryconfigure(0, state=state)
         except Exception:
             pass
+
+    def _center_on_parent(self, parent: tk.Misc) -> None:
+        try:
+            parent.update_idletasks()
+            self._window.update_idletasks()
+        except Exception:
+            pass
+        w = int(self._window.winfo_width() or self._window.winfo_reqwidth() or 920)
+        h = int(self._window.winfo_height() or self._window.winfo_reqheight() or 420)
+        try:
+            geo = parent.winfo_geometry()
+            size, pos = geo.split("+", 1)
+            pw_s, ph_s = size.split("x", 1)
+            px_s, py_s = pos.split("+", 1)
+            pw, ph = int(pw_s), int(ph_s)
+            px, py = int(px_s), int(py_s)
+            x = px + (pw - w) // 2
+            y = py + (ph - h) // 2
+        except Exception:
+            sw = self._window.winfo_screenwidth()
+            sh = self._window.winfo_screenheight()
+            x = (sw - w) // 2
+            y = (sh - h) // 2
+        self._window.geometry(f"{w}x{h}+{x}+{y}")
+
+    def _on_tree_resize(self, _event: tk.Event) -> None:
+        if self._resize_job is not None:
+            try:
+                self._window.after_cancel(self._resize_job)
+            except Exception:
+                pass
+        self._resize_job = self._window.after(50, self._fit_columns)
+
+    def _column_key_from_id(self, col_id: str) -> Optional[str]:
+        if not col_id.startswith("#"):
+            return None
+        try:
+            idx = int(col_id[1:]) - 1
+        except Exception:
+            return None
+        keys = [c["key"] for c in self._columns]
+        if 0 <= idx < len(keys):
+            return keys[idx]
+        return None
+
+    def _autofit_column(self, key: str) -> None:
+        font = tkfont.nametofont(self._tree.cget("font"))
+        header = str(self._tree.heading(key, "text") or key)
+        max_w = font.measure(header) + 16
+        for item in self._tree.get_children():
+            values = self._tree.item(item, "values")
+            idx = [c["key"] for c in self._columns].index(key)
+            if idx < len(values):
+                max_w = max(max_w, font.measure(str(values[idx])) + 16)
+        self._tree.column(key, width=max_w, stretch=True)
+
+    def _fit_columns(self) -> None:
+        self._resize_job = None
+        if not self._tree.winfo_exists():
+            return
+        font = tkfont.nametofont(self._tree.cget("font"))
+        keys = [c["key"] for c in self._columns]
+        widths: dict[str, int] = {}
+        total = 0
+        for key in keys:
+            header = str(self._tree.heading(key, "text") or key)
+            max_w = font.measure(header) + 16
+            idx = keys.index(key)
+            for item in self._tree.get_children():
+                values = self._tree.item(item, "values")
+                if idx < len(values):
+                    max_w = max(max_w, font.measure(str(values[idx])) + 16)
+            widths[key] = max_w
+            total += max_w
+
+        avail = max(int(self._tree.winfo_width()) - 8, 100)
+        if total < avail:
+            extra = avail - total
+            flex_keys = [k for k in keys if k in ("path", "basename")] or keys
+            if flex_keys:
+                per = extra // len(flex_keys)
+                for k in flex_keys:
+                    widths[k] += per
+
+        for key in keys:
+            self._tree.column(key, width=widths[key], stretch=True)
+
+    def _on_sort(self, key: str) -> None:
+        if self._sort_key == key:
+            self._sort_desc = not self._sort_desc
+        else:
+            self._sort_key = key
+            self._sort_desc = False
+        self._apply_sort()
+        self._update_sort_heading()
+
+    def _apply_sort(self) -> None:
+        if not self._sort_key:
+            return
+        key = self._sort_key
+        keys = [c["key"] for c in self._columns]
+        try:
+            idx = keys.index(key)
+        except ValueError:
+            return
+        items = list(self._tree.get_children())
+
+        def _sort_value(item_id: str) -> tuple[int, Any]:
+            values = self._tree.item(item_id, "values")
+            raw = values[idx] if idx < len(values) else ""
+            try:
+                return (0, float(raw))
+            except Exception:
+                return (1, str(raw).lower())
+
+        items.sort(key=_sort_value, reverse=self._sort_desc)
+        for item in items:
+            self._tree.move(item, "", "end")
+
+    def _update_sort_heading(self) -> None:
+        arrow = "▼" if self._sort_desc else "▲"
+        for col in self._columns:
+            key = col["key"]
+            title = str(col.get("title") or key)
+            label = f"{title} {arrow}" if key == self._sort_key else title
+            self._tree.heading(key, text=label)

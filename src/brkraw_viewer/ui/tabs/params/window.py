@@ -86,6 +86,7 @@ class ParamsTab:
         results_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
         results_frame.columnconfigure(0, weight=1)
         results_frame.rowconfigure(0, weight=1)
+        results_frame.rowconfigure(1, weight=0)
 
         columns = ("file", "key", "type", "value")
         tree = ttk.Treeview(results_frame, columns=columns, show="headings")
@@ -104,6 +105,14 @@ class ParamsTab:
         vscroll = ttk.Scrollbar(results_frame, orient="vertical", command=tree.yview)
         vscroll.grid(row=0, column=1, sticky="ns")
         tree.configure(yscrollcommand=vscroll.set)
+        tree.bind("<<TreeviewSelect>>", self._on_result_select)
+
+        detail_frame = ttk.LabelFrame(results_frame, text="Value Detail", padding=(6, 4))
+        detail_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        detail_frame.columnconfigure(0, weight=1)
+        self._detail_text = tk.Text(detail_frame, height=4, wrap="word")
+        self._detail_text.grid(row=0, column=0, sticky="ew")
+        self._detail_text.configure(state=tk.DISABLED)
 
     def _run_param_search(self) -> None:
         query = (self._param_query_var.get() or "").strip()
@@ -135,6 +144,7 @@ class ParamsTab:
         if truncated:
             self._params_tree.insert("", "end", values=("", "", "", f"... {truncated} more result(s)"))
         self._update_params_sort_heading()
+        self._clear_detail()
 
     def _params_sort_by(self, key: str) -> None:
         if self._params_sort_key == key:
@@ -153,3 +163,24 @@ class ParamsTab:
             if col == self._params_sort_key:
                 label = f"{label} {arrow}"
             self._params_tree.heading(col, text=label)
+
+    def _clear_detail(self) -> None:
+        if not hasattr(self, "_detail_text"):
+            return
+        self._detail_text.configure(state=tk.NORMAL)
+        self._detail_text.delete("1.0", tk.END)
+        self._detail_text.configure(state=tk.DISABLED)
+
+    def _on_result_select(self, _event: tk.Event) -> None:
+        if not hasattr(self, "_detail_text"):
+            return
+        items = self._params_tree.selection()
+        if not items:
+            self._clear_detail()
+            return
+        values = self._params_tree.item(items[0], "values")
+        value = values[3] if len(values) > 3 else ""
+        self._detail_text.configure(state=tk.NORMAL)
+        self._detail_text.delete("1.0", tk.END)
+        self._detail_text.insert(tk.END, str(value))
+        self._detail_text.configure(state=tk.DISABLED)
