@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from typing import Tuple
 import numpy as np
 import nibabel as nib
 
 
-def reorient_to_ras(data: np.ndarray, affine: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def reorient_to_ras(data: np.ndarray, affine: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     data = np.asarray(data)
     affine = np.asarray(affine, dtype=float)
 
@@ -14,4 +15,3 @@ def reorient_to_ras(data: np.ndarray, affine: np.ndarray) -> tuple[np.ndarray, n
     new_data = nib.orientations.apply_orientation(data, transform)
     new_affine = affine @ nib.orientations.inv_ornt_aff(transform, data.shape)
     return new_data, new_affine
-

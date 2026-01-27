@@ -2,21 +2,29 @@
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 from pathlib import Path
+import re
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-INIT_PATH = REPO_ROOT / "src" / "brkraw_viewer" / "__init__.py"
+PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 
 
 def get_version() -> str:
-    text = INIT_PATH.read_text(encoding="utf-8")
-    match = re.search(r"__version__\s*=\s*['\"]([^'\"]+)['\"]", text)
-    if not match:
-        raise SystemExit("Failed to detect __version__ in src/brkraw_viewer/__init__.py")
-    return match.group(1)
+    text = PYPROJECT_PATH.read_text(encoding="utf-8")
+    data = tomllib.loads(text)
+    version = data.get("project", {}).get("version")
+    if not version:
+        raise SystemExit("Failed to detect version in pyproject.toml")
+    if not re.search(r"[0-9A-Za-z]", str(version)):
+        raise SystemExit("Invalid version in pyproject.toml")
+    return str(version)
 
 
 def run_git(args: list[str]) -> None:

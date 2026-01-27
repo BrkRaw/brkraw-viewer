@@ -9,6 +9,13 @@
   ],
   "tasks": [
     {
+      "label": "Test: Run Viewer",
+      "type": "shell",
+      "command": "\"${command:python.interpreterPath}\" -c \"from brkraw_viewer.app.bootstrap import run_app; run_app()\"",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
       "label": "Standard: MkDocs Serve",
       "type": "shell",
       "command": "\"${command:python.interpreterPath}\" -m mkdocs serve",

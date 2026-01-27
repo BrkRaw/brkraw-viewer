@@ -1,11 +1,11 @@
 name: Release On Merge
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: write
-  pull-requests: read
 
 jobs:
   tag_release:
@@ -15,117 +15,101 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Check release label
-        id: release
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          from urllib import request
-
-          token = os.environ.get("GITHUB_TOKEN")
-          repo = os.environ["GITHUB_REPOSITORY"]
-          sha = os.environ["GITHUB_SHA"]
-          owner, name = repo.split("/")
-
-          query = {
-              "query": """
-              query($owner: String!, $name: String!, $cursor: String) {
-                repository(owner: $owner, name: $name) {
-                  pullRequests(states: MERGED, first: 50, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
-                    nodes {
-                      mergeCommit { oid }
-                      labels(first: 100) { nodes { name } }
-                    }
-                    pageInfo { hasNextPage endCursor }
-                  }
-                }
-              }
-              """,
-              "variables": {"owner": owner, "name": name, "cursor": None},
-          }
-
-          allowed = False
-          while True:
-              req = request.Request("https://api.github.com/graphql", method="POST")
-              req.add_header("Authorization", f"Bearer {token}")
-              req.add_header("Content-Type", "application/json")
-              data = json.dumps(query).encode("utf-8")
-              with request.urlopen(req, data=data) as resp:
-                  payload = json.loads(resp.read().decode("utf-8"))
-
-              repo_data = payload.get("data", {}).get("repository", {})
-              pr_data = repo_data.get("pullRequests", {})
-              for pr in pr_data.get("nodes", []):
-                  merge_commit = pr.get("mergeCommit") or {}
-                  if merge_commit.get("oid") != sha:
-                      continue
-                  labels = {node.get("name") for node in pr.get("labels", {}).get("nodes", [])}
-                  if "release" in labels:
-                      allowed = True
-                  break
-              if allowed:
-                  break
-              page_info = pr_data.get("pageInfo", {})
-              if not page_info.get("hasNextPage"):
-                  break
-              query["variables"]["cursor"] = page_info.get("endCursor")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"allowed={'true' if allowed else 'false'}\n")
-          PY
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
-      - name: Resolve version
+      - name: Detect version change
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BEFORE: ${{ github.event.before }}
         run: |
+          set -euo pipefail
+
+          # Default outputs
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+
+          # Only proceed for merge commits ("Merge pull request ...")
+          if [[ "${{ github.event.head_commit.message }}" != Merge\ pull\ request* ]]; then
+            echo "Not a merge commit. Skipping."
+            exit 0
+          fi
+
+          # Find the PR associated with this merge commit and ensure it has the 'release' label.
+          api="https://api.github.com/repos/${REPO}/commits/${SHA}/pulls"
+          pr_json=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Accept: application/vnd.github.groot-preview+json" \
+            "$api" || true)
+          export PR_JSON="$pr_json"
+
+          pr_number=$(python3 - <<'PY'
+          import json, os
+          s = os.environ.get('PR_JSON','')
+          if not s.strip():
+            print('')
+            raise SystemExit(0)
+          data = json.loads(s)
+          if isinstance(data, list) and data:
+            print(data[0].get('number',''))
+          else:
+            print('')
+          PY
+          )
+
+          if [[ -z "${pr_number}" ]]; then
+            echo "No PR associated with ${SHA}. Skipping."
+            exit 0
+          fi
+
+          labels_api="https://api.github.com/repos/${REPO}/issues/${pr_number}/labels"
+          labels_json=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "$labels_api")
+          export LABELS_JSON="$labels_json"
+
+          has_release=$(python3 - <<'PY'
+          import json, os
+          labels = json.loads(os.environ['LABELS_JSON'])
+          names = {l.get('name','') for l in labels if isinstance(l, dict)}
+          print('true' if 'release' in names else 'false')
+          PY
+          )
+
+          if [[ "${has_release}" != "true" ]]; then
+            echo "PR #${pr_number} does not have 'release' label. Skipping."
+            exit 0
+          fi
+
+          # Check whether version file changed in this push
+          if ! git diff --name-only "${BEFORE}" "${SHA}" | grep -q '^pyproject.toml$'; then
+            echo "pyproject.toml not changed. Skipping."
+            exit 0
+          fi
+
           version=$(python3 - <<'PY'
           import re
           from pathlib import Path
 
-          def read_version_from_init() -> str | None:
-              init_path = Path("src/brkraw_viewer/__init__.py")
-              if not init_path.exists():
-                  return None
-              text = init_path.read_text(encoding="utf-8")
-              match = re.search(r"__version__\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]", text)
-              if not match:
-                  return None
-              return match.group(1)
-
-          def read_version_from_pyproject() -> str | None:
-              pyproject = Path("pyproject.toml")
-              if not pyproject.exists():
-                  return None
-              text = pyproject.read_text(encoding="utf-8")
-              try:
-                  import tomllib
-              except ModuleNotFoundError:  # pragma: no cover
-                  import tomli as tomllib
-              data = tomllib.loads(text)
-              return data.get("project", {}).get("version")
-
-          version = read_version_from_init() or read_version_from_pyproject()
-          if not version:
-              raise SystemExit("No version found in src/brkraw_viewer/__init__.py or pyproject.toml")
-          print(version)
+          text = Path("pyproject.toml").read_text(encoding="utf-8")
+          match = re.search(r"^version\s*=\s*[\"']([^\"']+)[\"']", text, flags=re.MULTILINE)
+          if not match:
+              raise SystemExit("No version found in pyproject.toml")
+          print(match.group(1))
           PY
           )
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "value=$version" >> "$GITHUB_OUTPUT"
-      - name: Check tag exists
-        id: tag
+        shell: bash
+      - name: Create and push tag
+        if: ${{ steps.version.outputs.changed == 'true' }}
         run: |
           tag="${{ steps.version.outputs.value }}"
           if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $tag already exists. Skipping."
+            exit 0
           fi
-      - name: Create and push tag
-        if: ${{ steps.release.outputs.allowed == 'true' && steps.tag.outputs.exists == 'false' }}
-        run: |
-          tag="${{ steps.version.outputs.value }}"
           git tag "$tag" "${{ github.sha }}"
           git push origin "$tag"
