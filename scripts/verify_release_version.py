@@ -16,18 +16,9 @@ from packaging.version import parse
 def read_version_from_pyproject(pyproject_path: Path) -> str:
     pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     version = pyproject.get("project", {}).get("version")
-    if version:
-        return version
-
-    version_path = pyproject.get("tool", {}).get("hatch", {}).get("version", {}).get("path")
-    if not version_path:
-        raise SystemExit("No version in pyproject.toml and no hatch version path found.")
-
-    text = Path(version_path).read_text(encoding="utf-8")
-    match = re.search(r"__version__\\s*=\\s*[\"\\x27]([^\"\\x27]+)[\"\\x27]", text)
-    if not match:
-        raise SystemExit(f"No __version__ found in {version_path}")
-    return match.group(1)
+    if not version:
+        raise SystemExit("No version found in pyproject.toml.")
+    return version
 
 
 def main() -> int:

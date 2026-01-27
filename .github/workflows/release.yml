@@ -1,6 +1,9 @@
 name: Create Release
 
 on:
+  push:
+    tags:
+      - "*"
   workflow_dispatch:
     inputs:
       tag:
@@ -11,16 +14,24 @@ on:
 permissions:
   contents: write
   discussions: write
+  id-token: write
 
 jobs:
   release:
     if: ${{ github.repository == 'BrkRaw/brkraw-viewer' }}
     runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.prerelease.outputs.value }}
+      tag: ${{ steps.tag.outputs.value }}
     steps:
       - name: Resolve tag
         id: tag
         run: |
-          echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v4
         with:
           ref: ${{ steps.tag.outputs.value }}
@@ -40,8 +51,6 @@ jobs:
           name: ${{ steps.tag.outputs.value }}
           body_path: RELEASE_NOTES.md
           prerelease: ${{ steps.prerelease.outputs.value }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Post release announcement
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -61,12 +70,9 @@ jobs:
           release_url = os.environ["RELEASE_URL"]
           owner, name = repo.split("/")
 
-          notes_path = Path("RELEASE_NOTES.md")
-          notes = notes_path.read_text(encoding="utf-8").strip() if notes_path.exists() else ""
+          notes = Path("RELEASE_NOTES.md").read_text(encoding="utf-8").strip()
           title = f"Release {tag}"
-          body = f"[Release {tag}]({release_url})"
-          if notes:
-              body = f"{body}\\n\\n{notes}"
+          body = f"[Release {tag}]({release_url})\n\n{notes}"
 
           query = {
               "query": """
@@ -125,3 +131,11 @@ jobs:
           if url:
               print(f"Created discussion: {url}")
           PY
+
+  publish:
+    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' }}
+    needs: [release]
+    uses: ./.github/workflows/publish.yml
+    with:
+      target: ${{ needs.release.outputs.prerelease == 'true' && 'testpypi' || 'pypi' }}
+      tag: ${{ needs.release.outputs.tag }}

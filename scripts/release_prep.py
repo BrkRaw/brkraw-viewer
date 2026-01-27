@@ -9,7 +9,6 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-INIT_PATH = REPO_ROOT / "src" / "brkraw_viewer" / "__init__.py"
 README_PATH = REPO_ROOT / "README.md"
 RELEASE_NOTES_PATH = REPO_ROOT / "RELEASE_NOTES.md"
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
@@ -23,19 +22,6 @@ def run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
         text=True,
         capture_output=True,
     )
-
-
-def update_init_version(version: str) -> None:
-    text = INIT_PATH.read_text(encoding="utf-8")
-    new_text, count = re.subn(
-        r"^__version__\s*=\s*['\"][^'\"]+['\"]\s*$",
-        f"__version__ = '{version}'",
-        text,
-        flags=re.MULTILINE,
-    )
-    if count != 1:
-        raise RuntimeError("Failed to update __version__ in __init__.py")
-    INIT_PATH.write_text(new_text, encoding="utf-8")
 
 
 def update_readme_version(version: str) -> None:
@@ -155,13 +141,11 @@ def main() -> None:
         fetch_tags(args.remote)
 
     status_classifier, status_label, _is_stable = determine_status(args.version)
-    update_init_version(args.version)
     update_readme_version(args.version)
     update_pyproject_version(args.version)
     update_pyproject_classifiers(status_classifier)
     generate_release_notes(args.version)
 
-    print(f"Updated {INIT_PATH}")
     if README_PATH.exists():
         print(f"Checked {README_PATH}")
     print(f"Updated {PYPROJECT_PATH}")
