@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Callable, Optional, Tuple, Dict, List
 
 import numpy as np
 from PIL import Image, ImageTk, ImageDraw
+
+from ..assets import load_icon
+from .icon_button import IconButton
 
 
 ClickCallback = Callable[[int, int], None]
@@ -150,6 +154,7 @@ class ViewportCanvas(ttk.Frame):
         self._tk_img: Optional[ImageTk.PhotoImage] = None
         self._img_id: Optional[int] = None
         self._title_id: Optional[int] = None
+        self._capture_icon: Optional[tk.PhotoImage] = None
 
         # Independent RGBA overlay layer (e.g., label painting)
         self._overlay_rgba: Optional[np.ndarray] = None  # (H, W, 4) uint8
@@ -190,20 +195,29 @@ class ViewportCanvas(ttk.Frame):
         self._canvas.bind("<Button-5>", self._on_mousewheel)
 
         # capture button (bottom-right)
-        self._capture_btn = tk.Button(
-            self._canvas,
-            text="◉",
-            width=1,
-            height=1,
-            font=("TkDefaultFont", 10),
-            bg=background,
-            fg="#f6f6f6",
-            activebackground="#3a3a3a",
-            activeforeground="#ffff00",
-            highlightthickness=0,
-            borderwidth=0,
-            command=self._on_capture,
-        )
+        self._capture_icon = load_icon("viewport-capture.png", size=(16, 16), invert=True)
+        if self._capture_icon is not None:
+            self._capture_btn = IconButton(
+                self._canvas,
+                image=self._capture_icon,
+                command=self._on_capture,
+                bg=background,
+            )
+        else:
+            self._capture_btn = tk.Button(
+                self._canvas,
+                text="◉",
+                width=1,
+                height=1,
+                font=("TkDefaultFont", 10),
+                bg=background,
+                fg="#f6f6f6",
+                activebackground="#3a3a3a",
+                activeforeground="#ffff00",
+                highlightthickness=0,
+                borderwidth=0,
+                command=self._on_capture,
+            )
         self._capture_btn.place(relx=1.0, rely=1.0, x=0, y=0, anchor="se")
 
     # -------- public API --------
@@ -216,6 +230,34 @@ class ViewportCanvas(ttk.Frame):
 
     def set_capture_callback(self, cb: Optional[Callable[[], None]]) -> None:
         self._capture_cb = cb
+
+    def capture_to_file(self, path: str | Path) -> bool:
+        if self._last_base is None:
+            return False
+        base = np.asarray(self._last_base)
+        if np.iscomplexobj(base):
+            base = np.abs(base)
+
+        base_rgb = self._base_to_rgb(base)
+        if self._last_overlay is not None:
+            base_rgb = self._apply_overlay(base_rgb, self._last_overlay)
+
+        rgba = self._overlay_rgba
+        if rgba is not None:
+            arr = np.asarray(rgba)
+            if arr.shape[:2] == base_rgb.shape[:2] and arr.shape[2] == 4:
+                alpha = arr[:, :, 3:4].astype(np.float32) / 255.0
+                over = arr[:, :, :3].astype(np.float32)
+                base_rgb = (base_rgb.astype(np.float32) * (1.0 - alpha) + over * alpha).astype(np.uint8)
+
+        pil_img = Image.fromarray(np.flipud(base_rgb), mode="RGB")
+        out_path = Path(path)
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            pil_img.save(out_path)
+        except Exception:
+            return False
+        return True
 
     def bind_canvas(self, sequence: str, func: Callable, add: bool = True) -> str:
         # Helper for external components (eg painter) to bind to the drawing surface.

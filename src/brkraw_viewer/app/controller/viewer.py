@@ -73,6 +73,7 @@ class ViewerController:
         self._convert_layout_source = "Config"
         self._convert_layout_auto = True
         self._convert_layout_template = ""
+        self._convert_output_dir: Path = Path.cwd()
         self._context_map_path: Optional[str] = None
         self._convert_layout_cache_key: Optional[tuple] = None
         self._convert_use_viewer_orientation: bool = True
@@ -1210,6 +1211,7 @@ class ViewerController:
                 subject_pose = None
 
         out_dir = Path(output_dir) if output_dir else Path.cwd()
+        self._convert_output_dir = out_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         base = base_name.strip()
         if not base:
@@ -1336,6 +1338,7 @@ class ViewerController:
             bool(layout_template),
         )
         output_dir = Path(output_dir) if output_dir else Path.cwd()
+        self._convert_output_dir = output_dir
         planned = self._plan_output_paths(
             output_dir=output_dir,
             base_name=layout_template.strip() if layout_template else "",
@@ -1355,6 +1358,32 @@ class ViewerController:
         self._view.set_convert_preview_text(preview_text)
         self._view.set_convert_settings_text(settings)
 
+    def on_convert_output_dir_change(self, output_dir: str) -> None:
+        self._convert_output_dir = Path(output_dir) if output_dir else Path.cwd()
+
+    def on_viewer_capture(self, plane: str, indices: tuple[int, int, int]) -> Optional[str]:
+        if self.state.dataset.path is None:
+            if self._view is not None:
+                self._view.set_status("No dataset open.")
+            return None
+        sid = self.state.dataset.selected_scan_id
+        rid = self.state.dataset.selected_reco_id
+        if sid is None or rid is None:
+            if self._view is not None:
+                self._view.set_status("Select scan/reco first.")
+            return None
+        output_dir = self._convert_output_dir or Path.cwd()
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        prefix = self._capture_output_prefix(scan_id=int(sid), reco_id=int(rid))
+        x, y, z = indices
+        plane_name = str(plane).lower().strip()
+        if plane_name not in {"xy", "xz", "zy"}:
+            plane_name = "xy"
+        return str(_capture_output_path(output_dir, prefix, x=x, y=y, z=z, plane=plane_name))
+
     @staticmethod
     def _planned_sidecar_paths(planned: list[str], *, sidecar_format: str) -> list[str]:
         suffix = ".json" if sidecar_format == "json" else ".yaml"
@@ -1366,6 +1395,47 @@ class ViewerController:
                 sidecar = path.with_name(path.name[:-7] + suffix)
             sidecars.append(str(sidecar))
         return sidecars
+
+    def _capture_output_prefix(self, *, scan_id: int, reco_id: int) -> str:
+        template, entries, resolved_map = self._resolve_layout_sources(
+            layout_source=self._convert_layout_source,
+            layout_auto=self._convert_layout_auto,
+            layout_template=self._convert_layout_template,
+            context_map=self._context_map_path,
+        )
+        if self._convert_layout_template:
+            template = self._convert_layout_template
+        try:
+            base = self.dataset.render_layout(
+                scan_id,
+                reco_id,
+                layout_entries=entries,
+                layout_template=template or None,
+                context_map=resolved_map,
+            )
+        except Exception:
+            base = ""
+        if not base:
+            base = f"scan{scan_id:03d}_reco{reco_id:03d}"
+
+        slicepacks = max(int(self._viewer_slicepacks or 1), 1)
+        if slicepacks <= 1:
+            return base
+        try:
+            info = self.dataset.layout_info(
+                scan_id,
+                reco_id,
+                context_map=resolved_map,
+                info_spec=None,
+                metadata_spec=None,
+            )
+        except Exception:
+            info = {}
+        suffix_template = brkapi.config.output_slicepack_suffix(root=None)
+        suffixes = self.dataset.render_slicepack_suffixes(info, count=slicepacks, template=suffix_template)
+        idx = min(max(int(self.state.viewer.slicepack_index), 0), len(suffixes) - 1) if suffixes else 0
+        suffix = suffixes[idx] if suffixes and idx >= 0 else ""
+        return f"{base}{suffix}"
 
     def on_convert_hook_toggle(self, enabled: bool) -> None:
         self._convert_hook_enabled = bool(enabled)
@@ -1509,3 +1579,21 @@ def _parse_fov(value: object) -> Optional[tuple[float, float, float]]:
             return None
         out.append(fval)
     return (out[0], out[1], out[2])
+
+
+def _capture_output_path(
+    output_dir: Path,
+    prefix: str,
+    *,
+    x: int,
+    y: int,
+    z: int,
+    plane: str,
+) -> Path:
+    base_path = Path(prefix)
+    if base_path.is_absolute():
+        base_path = Path(base_path.name)
+    target_dir = output_dir / base_path.parent
+    stem = base_path.name if base_path.name else "capture"
+    filename = f"{stem}_{x}_{y}_{z}_plane-{plane}.png"
+    return target_dir / filename

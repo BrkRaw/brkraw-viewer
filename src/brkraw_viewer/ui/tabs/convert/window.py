@@ -53,6 +53,7 @@ class ConvertTab:
 
         # output vars
         self._output_dir_var = tk.StringVar(value=os.getcwd())
+        self._output_dir_var.trace_add("write", lambda *_: self._on_output_dir_change())
         self._convert_sidecar_var = tk.BooleanVar(value=False)
         self._convert_sidecar_format_var = tk.StringVar(value="json")
         self._use_viewer_orientation_var = tk.BooleanVar(value=True)
@@ -547,6 +548,11 @@ class ConvertTab:
             sidecar_enabled=self._convert_sidecar_var.get(),
             sidecar_format=self._convert_sidecar_format_var.get(),
         )
+
+    def _on_output_dir_change(self) -> None:
+        handler = getattr(self._cb, "on_convert_output_dir_change", None)
+        if callable(handler):
+            handler(self._output_dir_var.get())
 
     def _open_hook_options(self) -> None:
         hook_name = (self._hook_name_var.get() or "").strip()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from typing import Optional
 
 from brkraw_viewer.ui.components.viewport import ViewportCanvas
@@ -74,6 +74,9 @@ class ViewerRightPanel(ttk.Frame):
         self._xz.set_click_callback(lambda r, c: self._on_view_click("xz", r, c))
         self._xy.set_click_callback(lambda r, c: self._on_view_click("xy", r, c))
         self._zy.set_click_callback(lambda r, c: self._on_view_click("zy", r, c))
+        self._xz.set_capture_callback(lambda: self._on_view_capture("xz", self._xz))
+        self._xy.set_capture_callback(lambda: self._on_view_capture("xy", self._xy))
+        self._zy.set_capture_callback(lambda: self._on_view_capture("zy", self._zy))
 
         bottom_bar = ttk.Frame(self)
         bottom_bar.grid(row=2, column=0, sticky="ew", pady=(6, 0))
@@ -134,6 +137,27 @@ class ViewerRightPanel(ttk.Frame):
         handler = getattr(callbacks, "on_viewer_frame_change", None)
         if callable(handler):
             handler(int(float(value)))
+
+    def _on_view_capture(self, plane: str, viewport: ViewportCanvas) -> None:
+        if self._last_indices is None:
+            return
+        handler = getattr(self._callbacks, "on_viewer_capture", None)
+        if not callable(handler):
+            return
+        try:
+            path = handler(plane, self._last_indices)
+        except Exception:
+            return
+        if not path:
+            return
+        filename = str(path)
+        ok = messagebox.askyesno("Viewport Capture", f"Save capture to:\n{filename}")
+        if not ok:
+            return
+        try:
+            viewport.capture_to_file(filename)
+        except Exception:
+            pass
 
     def _on_flip(self, callbacks, axis: str, enabled: bool) -> None:
         handler = getattr(callbacks, "on_viewer_flip_change", None)
