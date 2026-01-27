@@ -12,6 +12,7 @@ dependencies = [
   "brkraw>=0.5.0rc1",
   "nibabel>=5.0",
   "pillow>=10.0",
+  "ruamel.yaml>=0.17.0",
 ]
 authors = [{name = "BrkRaw"}]
 license = {text = "MIT"}
@@ -20,9 +21,6 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
-
-[project.entry-points."brkraw.cli"]
-viewer = "brkraw_viewer.plugin:register"
 
 [project.optional-dependencies]
 docs = [
@@ -44,3 +42,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 brkraw_viewer = ["assets/*.png", "assets/*.ico", "snippets/**/*.yaml"]
+
+[project.entry-points."brkraw.cli"]
+viewer = "brkraw_viewer.cli_viewer:register"
+viewer-config = "brkraw_viewer.cli_viewer_config:register"

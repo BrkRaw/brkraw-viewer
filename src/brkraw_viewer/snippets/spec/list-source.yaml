@@ -1,5 +1,0 @@
-EchoTimes:
-  sources:
-    - file: method
-      key: PVM_EchoTime
-  transform: to_list
