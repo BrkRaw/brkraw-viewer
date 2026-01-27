@@ -1,4 +1,5 @@
 import datetime as dt
+from typing import Iterable
 
 
 def format_value(value: object) -> str:
@@ -30,7 +31,7 @@ def flatten_keys(obj: object, prefix: str = "") -> list[str]:
     return keys
 
 
-def filter_layout_keys(keys: set[str] | list[str]) -> list[str]:
+def filter_layout_keys(keys: Iterable[str]) -> list[str]:
     filtered: list[str] = []
     for key in keys:
         parts = key.split(".")
