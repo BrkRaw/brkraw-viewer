@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 from pathlib import Path
 from typing import Optional, Union, cast
 
@@ -60,6 +61,7 @@ class ViewerController:
         self._viewer_raw_affine: Optional[object] = None
         self._viewer_shape: Optional[tuple[int, ...]] = None
         self._viewer_res: tuple[float, float, float] = (1.0, 1.0, 1.0)
+        self._viewer_fov: Optional[tuple[float, float, float]] = None
         self._viewer_job_id: Optional[str] = None
         self._viewer_hook_enabled = False
         self._viewer_hook_name: Optional[str] = None
@@ -254,10 +256,12 @@ class ViewerController:
             return
         sid = self.state.dataset.selected_scan_id
         if sid is None:
+            self._viewer_fov = None
             self._view.set_params_summary({})
             return
         summary = self.dataset.params_summary(sid)
         self._view.set_params_summary(summary)
+        self._viewer_fov = _parse_fov(summary.get("FOV (mm)") if isinstance(summary, dict) else None)
 
     def _update_viewer_indices_from_shape(self) -> None:
         shape = self._viewer_shape
@@ -376,10 +380,16 @@ class ViewerController:
         }
         # Voxel spacing in RAS order to keep viewport aspect aligned with affine.
         res_x, res_y, res_z = self._viewer_res
+        fov = self._viewer_fov
+        if fov is not None and x > 0 and y > 0 and z > 0:
+            res_x = fov[0] / float(x)
+            res_y = fov[1] / float(y)
+            res_z = fov[2] / float(z)
+        # Voxel spacing in RAS order to keep viewport aspect aligned with extent.
         view_res = {
-            "xy": (res_y, res_x),
-            "xz": (res_z, res_x),
-            "zy": (res_y, res_z),
+            "xy": (res_x, res_y),
+            "xz": (res_x, res_z),
+            "zy": (res_z, res_y),
         }
         crosshair = {
             "xy": (yi, xi),
@@ -403,6 +413,7 @@ class ViewerController:
         self._viewer_raw_affine = None
         self._viewer_shape = None
         self._viewer_res = (1.0, 1.0, 1.0)
+        self._viewer_fov = None
         if self._view is None:
             return
         self._view.set_viewer_views({})
@@ -1474,4 +1485,27 @@ def _affine_to_resolution(affine: np.ndarray) -> tuple[float, float, float]:
         out.append(fval)
     while len(out) < 3:
         out.append(1.0)
+    return (out[0], out[1], out[2])
+
+
+def _parse_fov(value: object) -> Optional[tuple[float, float, float]]:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple, np.ndarray)):
+        items = list(value)
+    else:
+        text = str(value)
+        nums = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", text)
+        items = nums
+    if len(items) < 3:
+        return None
+    out: list[float] = []
+    for val in items[:3]:
+        try:
+            fval = float(val)
+        except Exception:
+            return None
+        if not np.isfinite(fval) or fval <= 0.0:
+            return None
+        out.append(fval)
     return (out[0], out[1], out[2])
