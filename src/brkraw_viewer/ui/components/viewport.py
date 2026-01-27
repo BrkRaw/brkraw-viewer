@@ -195,7 +195,7 @@ class ViewportCanvas(ttk.Frame):
         self._canvas.bind("<Button-5>", self._on_mousewheel)
 
         # capture button (bottom-right)
-        self._capture_icon = load_icon("viewport-capture.png", size=(16, 16), invert=True)
+        self._capture_icon = load_icon("viewport-capture.png", size=(12, 12), invert=True)
         if self._capture_icon is not None:
             self._capture_btn = IconButton(
                 self._canvas,
@@ -218,7 +218,7 @@ class ViewportCanvas(ttk.Frame):
                 borderwidth=0,
                 command=self._on_capture,
             )
-        self._capture_btn.place(relx=1.0, rely=1.0, x=0, y=0, anchor="se")
+        self._capture_btn.place(relx=1.0, rely=1.0, x=-3, y=-3, anchor="se")
 
     # -------- public API --------
 

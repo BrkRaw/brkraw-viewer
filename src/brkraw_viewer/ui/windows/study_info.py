@@ -45,6 +45,7 @@ class StudyInfoWindow:
             self._entries[label] = entry
 
         self.update_info(self._info)
+        self._fit_to_content()
 
     def winfo_exists(self) -> bool:
         return bool(self._window.winfo_exists())
@@ -74,6 +75,20 @@ class StudyInfoWindow:
             entry.delete(0, tk.END)
             entry.insert(0, _format_value(value) if value is not None else "")
             entry.configure(state="readonly")
+        self._fit_to_content()
+
+    def _fit_to_content(self) -> None:
+        try:
+            self._window.update_idletasks()
+        except Exception:
+            return
+        w = int(self._window.winfo_width() or self._window.winfo_reqwidth() or 720)
+        h = int(self._window.winfo_reqheight() or self._window.winfo_height() or 280)
+        self._window.geometry(f"{w}x{h}")
+        try:
+            self._window.minsize(560, h)
+        except Exception:
+            pass
 
 
 def _lookup_nested(info: dict, path: Iterable[str]) -> Any:

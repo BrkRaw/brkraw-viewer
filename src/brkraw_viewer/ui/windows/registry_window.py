@@ -255,7 +255,7 @@ class RegistryWindow:
         return None
 
     def _autofit_column(self, key: str) -> None:
-        font = tkfont.nametofont(self._tree.cget("font"))
+        font = self._tree_font()
         header = str(self._tree.heading(key, "text") or key)
         max_w = font.measure(header) + 16
         for item in self._tree.get_children():
@@ -269,7 +269,7 @@ class RegistryWindow:
         self._resize_job = None
         if not self._tree.winfo_exists():
             return
-        font = tkfont.nametofont(self._tree.cget("font"))
+        font = self._tree_font()
         keys = [c["key"] for c in self._columns]
         widths: dict[str, int] = {}
         total = 0
@@ -295,6 +295,15 @@ class RegistryWindow:
 
         for key in keys:
             self._tree.column(key, width=widths[key], stretch=True)
+
+    def _tree_font(self) -> tkfont.Font:
+        try:
+            return tkfont.nametofont(str(self._tree.cget("font")))
+        except Exception:
+            try:
+                return tkfont.nametofont("TkDefaultFont")
+            except Exception:
+                return tkfont.Font()
 
     def _on_sort(self, key: str) -> None:
         if self._sort_key == key:
