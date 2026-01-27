@@ -16,6 +16,7 @@ on:
 
 jobs:
   pytest:
+    if: ${{ github.repository == 'BrkRaw/brkraw-viewer' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
