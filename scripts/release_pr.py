@@ -146,6 +146,7 @@ def gh_pr_number(upstream_repo: str, head_ref: str, state: Literal['open', 'clos
         check=False,
     )
     if result.returncode != 0:
+        logger.error("gh api failed: %s", result.stderr.strip() or result.stdout.strip())
         return None
     value = result.stdout.strip()
     return value or None
