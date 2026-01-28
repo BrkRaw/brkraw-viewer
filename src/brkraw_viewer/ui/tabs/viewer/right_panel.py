@@ -279,6 +279,7 @@ class ViewerRightPanel(ttk.Frame):
             return
         crosshair = crosshair or {}
         res = res or {}
+        lock_mm_per_px = self._compute_shared_mm_per_px(views, res)
         if "xz" in views:
             self._xz.set_view(
                 base=views["xz"],
@@ -286,6 +287,7 @@ class ViewerRightPanel(ttk.Frame):
                 res=res.get("xz", (1.0, 1.0)),
                 crosshair=crosshair.get("xz"),
                 show_crosshair=show_crosshair,
+                mm_per_px=lock_mm_per_px,
             )
         if "xy" in views:
             self._xy.set_view(
@@ -294,6 +296,7 @@ class ViewerRightPanel(ttk.Frame):
                 res=res.get("xy", (1.0, 1.0)),
                 crosshair=crosshair.get("xy"),
                 show_crosshair=show_crosshair,
+                mm_per_px=lock_mm_per_px,
             )
         if "zy" in views:
             self._zy.set_view(
@@ -302,4 +305,36 @@ class ViewerRightPanel(ttk.Frame):
                 res=res.get("zy", (1.0, 1.0)),
                 crosshair=crosshair.get("zy"),
                 show_crosshair=show_crosshair,
+                mm_per_px=lock_mm_per_px,
             )
+
+    def _compute_shared_mm_per_px(
+        self,
+        views: dict,
+        res: dict[str, tuple[float, float]],
+    ) -> Optional[float]:
+        candidates: list[float] = []
+        for plane, viewport in (("xz", self._xz), ("xy", self._xy), ("zy", self._zy)):
+            base = views.get(plane)
+            if base is None:
+                continue
+            shape = getattr(base, "shape", None)
+            if not shape or len(shape) < 2:
+                continue
+            rows = int(shape[0])
+            cols = int(shape[1])
+            row_res, col_res = res.get(plane, (1.0, 1.0))
+            try:
+                width_mm = float(cols) * float(col_res)
+                height_mm = float(rows) * float(row_res)
+            except Exception:
+                continue
+            if width_mm <= 0 or height_mm <= 0:
+                continue
+            cw, ch = viewport.get_canvas_size()
+            if cw < 8 or ch < 8:
+                continue
+            candidates.append(max(width_mm / float(cw), height_mm / float(ch)))
+        if not candidates:
+            return None
+        return max(candidates)

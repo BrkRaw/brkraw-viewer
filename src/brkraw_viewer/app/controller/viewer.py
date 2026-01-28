@@ -388,11 +388,12 @@ class ViewerController:
             res_x = fov[0] / float(x)
             res_y = fov[1] / float(y)
             res_z = fov[2] / float(z)
-        # Voxel spacing in RAS order to keep viewport aspect aligned with extent.
+        # Viewport expects (row_res, col_res) to match the 2D image layout.
+        # img_xy shape: (y, x), img_xz: (z, x), img_zy: (y, z)
         view_res = {
-            "xy": (res_x, res_y),
-            "xz": (res_x, res_z),
-            "zy": (res_z, res_y),
+            "xy": (res_y, res_x),
+            "xz": (res_z, res_x),
+            "zy": (res_y, res_z),
         }
         crosshair = {
             "xy": (yi, xi),

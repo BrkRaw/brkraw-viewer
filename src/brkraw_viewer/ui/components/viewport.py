@@ -187,6 +187,7 @@ class ViewportCanvas(ttk.Frame):
         self._crosshair_rc: Optional[Tuple[int, int]] = None
         self._show_colorbar: bool = False
         self._allow_upsample: bool = True
+        self._lock_mm_per_px: Optional[float] = None
 
         self._canvas.bind("<Configure>", self._on_resize)
         self._canvas.bind("<Button-1>", self._on_click)
@@ -488,6 +489,7 @@ class ViewportCanvas(ttk.Frame):
         colorbar_ticks: Optional[List[Tuple[float, str]]] = None,  # normalized 0..1 ticks
         colorbar_label: str = "",
         allow_upsample: bool = True,
+        mm_per_px: Optional[float] = None,
     ) -> None:
         self._last_base = np.asarray(base)
         self._last_title = str(title)
@@ -497,6 +499,7 @@ class ViewportCanvas(ttk.Frame):
         self._show_crosshair = bool(show_crosshair)
         self._show_colorbar = bool(show_colorbar)
         self._allow_upsample = bool(allow_upsample)
+        self._lock_mm_per_px = None if mm_per_px is None else float(mm_per_px)
 
         if show_colorbar and overlay is not None:
             self._right.grid()
@@ -521,6 +524,12 @@ class ViewportCanvas(ttk.Frame):
         self._overlay_img_id = None
         self._brush_preview_img_id = None
         self._brush_preview_tk_img = None
+
+    def get_canvas_size(self) -> Tuple[int, int]:
+        try:
+            return (int(self._canvas.winfo_width()), int(self._canvas.winfo_height()))
+        except Exception:
+            return (0, 0)
 
     def add_marker(self, row: int, col: int, color: str) -> None:
         state = self._render_state
@@ -670,21 +679,28 @@ class ViewportCanvas(ttk.Frame):
         ch = max(int(ch), 1)
 
         # aspect from physical resolution if meaningful
-        resx, resy = self._last_res
-        width_mm = float(base.shape[1]) * resx if base.ndim >= 2 else float(pil_img.width)
-        height_mm = float(base.shape[0]) * resy if base.ndim >= 2 else float(pil_img.height)
-        if width_mm > 0 and height_mm > 0:
-            aspect = width_mm / height_mm
+        res_row, res_col = self._last_res
+        width_mm = float(base.shape[1]) * res_col if base.ndim >= 2 else float(pil_img.width)
+        height_mm = float(base.shape[0]) * res_row if base.ndim >= 2 else float(pil_img.height)
+        lock_mm_per_px = self._lock_mm_per_px
+        if lock_mm_per_px is not None and width_mm > 0 and height_mm > 0:
+            min_mm_per_px = max(width_mm / max(cw, 1), height_mm / max(ch, 1))
+            mm_per_px = max(float(lock_mm_per_px), float(min_mm_per_px))
+            tw = max(int(round(width_mm / mm_per_px)), 1)
+            th = max(int(round(height_mm / mm_per_px)), 1)
         else:
-            aspect = pil_img.width / max(pil_img.height, 1)
+            if width_mm > 0 and height_mm > 0:
+                aspect = width_mm / height_mm
+            else:
+                aspect = pil_img.width / max(pil_img.height, 1)
 
-        canvas_aspect = cw / max(ch, 1)
-        if canvas_aspect >= aspect:
-            th = ch
-            tw = max(int(th * aspect), 1)
-        else:
-            tw = cw
-            th = max(int(tw / aspect), 1)
+            canvas_aspect = cw / max(ch, 1)
+            if canvas_aspect >= aspect:
+                th = ch
+                tw = max(int(th * aspect), 1)
+            else:
+                tw = cw
+                th = max(int(tw / aspect), 1)
 
         # Pixel-perfect mode: do not enlarge beyond native pixel size.
         if not self._allow_upsample:
