@@ -46,6 +46,7 @@ class StudyInfoWindow:
 
         self.update_info(self._info)
         self._fit_to_content()
+        _center_window(self._window, parent)
 
     def winfo_exists(self) -> bool:
         return bool(self._window.winfo_exists())
@@ -134,3 +135,28 @@ def _format_study_date(value: Any) -> str:
         return parsed.strftime("%Y-%m-%d %H:%M")
     except ValueError:
         return text
+
+
+def _center_window(win: tk.Toplevel, parent: tk.Misc) -> None:
+    try:
+        win.update_idletasks()
+    except Exception:
+        return
+    try:
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+    except Exception:
+        return
+    try:
+        ww = win.winfo_reqwidth()
+        wh = win.winfo_reqheight()
+    except Exception:
+        return
+    x = px + max(int((pw - ww) / 2), 0)
+    y = py + max(int((ph - wh) / 2), 0)
+    try:
+        win.geometry(f"+{x}+{y}")
+    except Exception:
+        pass

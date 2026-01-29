@@ -61,6 +61,32 @@ class LoadVolumeResult:
 
 
 @dataclass(frozen=True)
+class TimecourseCacheRequest:
+    job_id: str
+    path: str
+    scan_id: int
+    reco_id: int
+    cache_path: str
+    slicepack_index: int = 0
+    space: str = "scanner"
+    subject_type: Optional[str] = None
+    subject_pose: Optional[str] = None
+    flip_x: bool = False
+    flip_y: bool = False
+    flip_z: bool = False
+
+
+@dataclass(frozen=True)
+class TimecourseCacheResult:
+    job_id: str
+    cache_path: Optional[str]
+    shape: Tuple[int, ...]
+    dtype: str
+    frames: int = 1
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class RegistryRequest:
     job_id: str
     action: str  # "add" | "remove" | "scan"

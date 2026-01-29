@@ -30,6 +30,7 @@ class ViewerState:
     y_index: int = 0
     z_index: int = 0
     show_crosshair: bool = True
+    rgb_mode: bool = False
     zoom: float = 1.0
     flip_x: bool = False
     flip_y: bool = False
@@ -39,6 +40,7 @@ class ViewerState:
     subject_type: Optional[str] = None
     subject_pose: Optional[str] = None
     extra_indices: list[int] = field(default_factory=list)
+    hook_locked: bool = False
 
 
 @dataclass
