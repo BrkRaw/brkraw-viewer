@@ -1248,6 +1248,17 @@ class AddonsTab:
         if payload is None:
             return ""
         if isinstance(payload, str):
+            text = payload.strip()
+            if text:
+                try:
+                    import json
+                    parsed = json.loads(text)
+                except Exception:
+                    return payload
+                try:
+                    return self._dump_yaml(parsed)
+                except Exception:
+                    return payload
             return payload
         try:
             return self._dump_yaml(payload)

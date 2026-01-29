@@ -312,11 +312,19 @@ class MainWindow(ttk.Frame):
         res: dict[str, tuple[float, float]] | None = None,
         crosshair: dict | None = None,
         show_crosshair: bool = False,
+        lock_scale: bool = True,
     ) -> None:
         tab = self.tabs.get_tab("Viewer")
         target = getattr(tab, "_tab_instance", None)
         if target is not None and hasattr(target, "set_views"):
-            target.set_views(views, indices=indices, res=res, crosshair=crosshair, show_crosshair=show_crosshair)
+            target.set_views(
+                views,
+                indices=indices,
+                res=res,
+                crosshair=crosshair,
+                show_crosshair=show_crosshair,
+                lock_scale=lock_scale,
+            )
 
     def set_viewer_subject_enabled(self, enabled: bool) -> None:
         tab = self.tabs.get_tab("Viewer")
@@ -341,6 +349,12 @@ class MainWindow(ttk.Frame):
         target = getattr(tab, "_tab_instance", None)
         if target is not None and hasattr(target, "set_rgb_state"):
             target.set_rgb_state(enabled=enabled, active=active)
+
+    def set_viewer_zoom_value(self, value: float) -> None:
+        tab = self.tabs.get_tab("Viewer")
+        target = getattr(tab, "_tab_instance", None)
+        if target is not None and hasattr(target, "set_zoom_value"):
+            target.set_zoom_value(value)
 
     def set_viewer_hook_state(self, hook_name: str, enabled: bool, hook_args: Optional[dict], *, allow_toggle: bool = True) -> None:
         tab = self.tabs.get_tab("Viewer")

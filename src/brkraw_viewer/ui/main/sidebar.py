@@ -30,8 +30,8 @@ class Sidebar(ttk.Frame):
         self._scan_selected_var = tk.StringVar(value="Selected: -")  # scan selection text
         self._reco_selected_var = tk.StringVar(value="Selected: -")  # reco selection text
 
-        def _auto_scrollbar(sb: ttk.Scrollbar):
-            def _handler(first: str, last: str) -> None:
+        def _auto_scrollbar(sb: ttk.Scrollbar) -> Callable[[float, float], None]:
+            def _handler(first: float, last: float) -> None:
                 try:
                     sb.set(first, last)
                     if float(first) <= 0.0 and float(last) >= 1.0:

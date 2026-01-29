@@ -43,8 +43,16 @@ class ViewerTab:
         res: dict[str, tuple[float, float]] | None = None,
         crosshair: dict | None = None,
         show_crosshair: bool = False,
+        lock_scale: bool = True,
     ) -> None:
-        self.right.set_views(views, indices=indices, res=res, crosshair=crosshair, show_crosshair=show_crosshair)
+        self.right.set_views(
+            views,
+            indices=indices,
+            res=res,
+            crosshair=crosshair,
+            show_crosshair=show_crosshair,
+            lock_scale=lock_scale,
+        )
 
     def set_subject_enabled(self, enabled: bool) -> None:
         self.top.set_subject_enabled(enabled)
@@ -63,6 +71,9 @@ class ViewerTab:
 
     def set_rgb_state(self, *, enabled: bool, active: bool) -> None:
         self.top.set_rgb_state(enabled=enabled, active=active)
+
+    def set_zoom_value(self, value: float) -> None:
+        self.top.set_zoom_value(value)
 
     def set_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
         self.right.set_value_display(value_text, plot_enabled=plot_enabled)

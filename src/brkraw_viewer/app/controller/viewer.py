@@ -339,11 +339,11 @@ class ViewerController:
         shape = self._viewer_shape
         if not shape or len(shape) < 3:
             return
-        z, y, x = shape[:3]
+        x, y, z = shape[:3]
         st = self.state.viewer
-        st.z_index = min(max(st.z_index, 0), max(z - 1, 0))
-        st.y_index = min(max(st.y_index, 0), max(y - 1, 0))
         st.x_index = min(max(st.x_index, 0), max(x - 1, 0))
+        st.y_index = min(max(st.y_index, 0), max(y - 1, 0))
+        st.z_index = min(max(st.z_index, 0), max(z - 1, 0))
         if self._viewer_frames > 1:
             st.frame_index = min(max(st.frame_index, 0), max(self._viewer_frames - 1, 0))
         elif len(shape) >= 4:
@@ -361,20 +361,20 @@ class ViewerController:
         shape = self._viewer_shape
         if not shape or len(shape) < 3:
             return
-        z, y, x = shape[:3]
+        x, y, z = shape[:3]
         st = self.state.viewer
         if center:
-            st.z_index = max(z // 2, 0)
-            st.y_index = max(y // 2, 0)
             st.x_index = max(x // 2, 0)
+            st.y_index = max(y // 2, 0)
+            st.z_index = max(z // 2, 0)
             if self._viewer_frames > 1:
                 st.frame_index = min(max(st.frame_index, 0), max(self._viewer_frames - 1, 0))
             else:
                 st.frame_index = 0
         else:
-            st.z_index = min(max(st.z_index, 0), max(z - 1, 0))
-            st.y_index = min(max(st.y_index, 0), max(y - 1, 0))
             st.x_index = min(max(st.x_index, 0), max(x - 1, 0))
+            st.y_index = min(max(st.y_index, 0), max(y - 1, 0))
+            st.z_index = min(max(st.z_index, 0), max(z - 1, 0))
         if self._viewer_frames > 1:
             st.frame_index = min(max(st.frame_index, 0), max(self._viewer_frames - 1, 0))
         elif len(shape) >= 4:
@@ -480,6 +480,7 @@ class ViewerController:
             res=view_res,
             crosshair=crosshair,
             show_crosshair=self.state.viewer.show_crosshair,
+            lock_scale=(zoom <= 1.0),
         )
         value_text, plot_enabled = _resolve_value_display(
             vol=np.asarray(self._viewer_volume),
@@ -1378,6 +1379,21 @@ class ViewerController:
             self.state.viewer.zoom = max(1.0, min(4.0, float(value)))
         except Exception:
             self.state.viewer.zoom = 1.0
+        if self._view is not None:
+            self._view.set_viewer_zoom_value(self.state.viewer.zoom)
+        self._render_viewer_views()
+
+    def on_viewer_zoom_step(self, direction: int) -> None:
+        try:
+            step = 0.25
+            current = float(self.state.viewer.zoom)
+            new_zoom = current + (step if int(direction) > 0 else -step)
+        except Exception:
+            new_zoom = 1.0
+        new_zoom = max(1.0, min(4.0, float(new_zoom)))
+        self.state.viewer.zoom = new_zoom
+        if self._view is not None:
+            self._view.set_viewer_zoom_value(new_zoom)
         self._render_viewer_views()
 
     def on_viewer_resize(self) -> None:

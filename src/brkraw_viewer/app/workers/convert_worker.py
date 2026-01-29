@@ -55,6 +55,7 @@ def _get_loader(path: str) -> brkapi.BrukerLoader:
 
 def _ensure_hook_state(loader: brkapi.BrukerLoader, scan_id: int, *, enable_hook: bool) -> ScanLoader:
     scan = cast(ScanLoader, loader.get_scan(scan_id))
+    hook_enabled_state = getattr(scan, "_hook_enabled_state", None)
     if enable_hook:
         try:
             if not getattr(scan, "_hook_resolved", False):
@@ -66,7 +67,8 @@ def _ensure_hook_state(loader: brkapi.BrukerLoader, scan_id: int, *, enable_hook
         except Exception as exc:
             logger.warning("Hook resolve failed for scan %s: %s", scan_id, exc)
         try:
-            scan._hook_enabled_state = True
+            if hook_enabled_state is not None or hasattr(scan, "_hook_enabled_state"):
+                setattr(scan, "_hook_enabled_state", True)
         except Exception:
             pass
     else:
@@ -81,7 +83,8 @@ def _ensure_hook_state(loader: brkapi.BrukerLoader, scan_id: int, *, enable_hook
             except Exception:
                 pass
         try:
-            scan._hook_enabled_state = False
+            if hook_enabled_state is not None or hasattr(scan, "_hook_enabled_state"):
+                setattr(scan, "_hook_enabled_state", False)
         except Exception:
             pass
     return scan

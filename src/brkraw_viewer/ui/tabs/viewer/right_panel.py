@@ -77,6 +77,12 @@ class ViewerRightPanel(ttk.Frame):
         self._xz.set_click_callback(lambda r, c: self._on_view_click("xz", r, c))
         self._xy.set_click_callback(lambda r, c: self._on_view_click("xy", r, c))
         self._zy.set_click_callback(lambda r, c: self._on_view_click("zy", r, c))
+        self._xz.set_scroll_callback(lambda d: self._on_view_scroll("xz", d))
+        self._xy.set_scroll_callback(lambda d: self._on_view_scroll("xy", d))
+        self._zy.set_scroll_callback(lambda d: self._on_view_scroll("zy", d))
+        self._xz.set_zoom_callback(self._on_view_zoom)
+        self._xy.set_zoom_callback(self._on_view_zoom)
+        self._zy.set_zoom_callback(self._on_view_zoom)
         self._xz.set_capture_callback(lambda: self._on_view_capture("xz", self._xz))
         self._xy.set_capture_callback(lambda: self._on_view_capture("xy", self._xy))
         self._zy.set_capture_callback(lambda: self._on_view_capture("zy", self._zy))
@@ -214,6 +220,39 @@ class ViewerRightPanel(ttk.Frame):
             yi, zi = int(row), int(col)
         handler(xi, yi, zi)
 
+    def _on_view_scroll(self, plane: str, direction: int) -> None:
+        if self._suspend_callbacks:
+            return
+        axis = None
+        var = None
+        scale = None
+        if plane == "xy":
+            axis, var, scale = "z", self._z_var, self._z_scale
+        elif plane == "xz":
+            axis, var, scale = "y", self._y_var, self._y_scale
+        elif plane == "zy":
+            axis, var, scale = "x", self._x_var, self._x_scale
+        if axis is None or var is None or scale is None:
+            return
+        try:
+            max_val = int(scale.cget("to"))
+        except Exception:
+            max_val = 0
+        cur = int(var.get())
+        step = 1 if int(direction) > 0 else -1
+        nxt = max(0, min(max_val, cur + step))
+        if nxt == cur:
+            return
+        var.set(nxt)
+        handler = getattr(self._callbacks, "on_viewer_axis_change", None)
+        if callable(handler):
+            handler(axis, int(nxt))
+
+    def _on_view_zoom(self, direction: int) -> None:
+        handler = getattr(self._callbacks, "on_viewer_zoom_step", None)
+        if callable(handler):
+            handler(int(direction))
+
     def set_ranges(self, *, x: int, y: int, z: int, frames: int, slicepacks: int) -> None:
         self._x_scale.configure(to=max(x - 1, 0))
         self._y_scale.configure(to=max(y - 1, 0))
@@ -299,6 +338,7 @@ class ViewerRightPanel(ttk.Frame):
         res: Optional[dict[str, tuple[float, float]]] = None,
         crosshair: Optional[dict] = None,
         show_crosshair: bool = False,
+        lock_scale: bool = True,
     ) -> None:
         self._last_indices = indices
         if not views:
@@ -308,7 +348,7 @@ class ViewerRightPanel(ttk.Frame):
             return
         crosshair = crosshair or {}
         res = res or {}
-        lock_mm_per_px = self._compute_shared_mm_per_px(views, res)
+        lock_mm_per_px = self._compute_shared_mm_per_px(views, res) if lock_scale else None
         if "xz" in views:
             self._xz.set_view(
                 base=views["xz"],

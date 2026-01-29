@@ -9,6 +9,8 @@ from brkraw_viewer.ui.windows.hook_options import HookOptionsDialog
 class ViewerTopPanel(ttk.Frame):
     def __init__(self, parent: tk.Misc, *, callbacks) -> None:
         super().__init__(parent)
+        self._callbacks = callbacks
+        self._suspend_zoom = False
         self.grid_propagate(False)
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0)
@@ -109,7 +111,7 @@ class ViewerTopPanel(ttk.Frame):
             orient=tk.HORIZONTAL,
             showvalue=True,
             length=110,
-            command=lambda v: self._on_zoom(callbacks, v),
+            command=self._on_zoom,
         )
         self._zoom_scale.set(1.0)
         self._zoom_scale.pack(side=tk.LEFT)
@@ -203,10 +205,19 @@ class ViewerTopPanel(ttk.Frame):
         if callable(handler):
             handler(self._rgb_var.get())
 
-    def _on_zoom(self, callbacks, value: str) -> None:
-        handler = getattr(callbacks, "on_viewer_zoom_change", None)
+    def _on_zoom(self, value: str) -> None:
+        if self._suspend_zoom:
+            return
+        handler = getattr(self._callbacks, "on_viewer_zoom_change", None)
         if callable(handler):
             handler(float(value))
+
+    def set_zoom_value(self, value: float) -> None:
+        self._suspend_zoom = True
+        try:
+            self._zoom_scale.set(float(value))
+        finally:
+            self._suspend_zoom = False
 
     def _on_space(self, callbacks, value: str) -> None:
         handler = getattr(callbacks, "on_viewer_space_change", None)

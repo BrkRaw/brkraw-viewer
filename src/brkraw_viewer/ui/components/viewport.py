@@ -15,6 +15,7 @@ from .icon_button import IconButton
 
 ClickCallback = Callable[[int, int], None]
 ZoomCallback = Callable[[int], None]
+ScrollCallback = Callable[[int], None]
 
 
 @dataclass(frozen=True)
@@ -167,6 +168,7 @@ class ViewportCanvas(ttk.Frame):
 
         self._click_cb: Optional[ClickCallback] = None
         self._zoom_cb: Optional[ZoomCallback] = None
+        self._scroll_cb: Optional[ScrollCallback] = None
         self._capture_cb: Optional[Callable[[], None]] = None
 
         self._markers: List[int] = []
@@ -194,6 +196,9 @@ class ViewportCanvas(ttk.Frame):
         self._canvas.bind("<MouseWheel>", self._on_mousewheel)
         self._canvas.bind("<Button-4>", self._on_mousewheel)
         self._canvas.bind("<Button-5>", self._on_mousewheel)
+        self._canvas.bind("<Shift-MouseWheel>", self._on_zoom_wheel)
+        self._canvas.bind("<Shift-Button-4>", self._on_zoom_wheel)
+        self._canvas.bind("<Shift-Button-5>", self._on_zoom_wheel)
 
         # capture button (bottom-right)
         self._capture_icon = load_icon("viewport-capture.png", size=(12, 12), invert=True)
@@ -228,6 +233,9 @@ class ViewportCanvas(ttk.Frame):
 
     def set_zoom_callback(self, cb: Optional[ZoomCallback]) -> None:
         self._zoom_cb = cb
+
+    def set_scroll_callback(self, cb: Optional[ScrollCallback]) -> None:
+        self._scroll_cb = cb
 
     def set_capture_callback(self, cb: Optional[Callable[[], None]]) -> None:
         self._capture_cb = cb
@@ -603,6 +611,36 @@ class ViewportCanvas(ttk.Frame):
         self._click_cb(int(r), int(c))
 
     def _on_mousewheel(self, event: tk.Event) -> Optional[str]:
+        direction = 0
+        delta = getattr(event, "delta", 0)
+        if isinstance(delta, int) and delta != 0:
+            direction = 1 if delta > 0 else -1
+        else:
+            num = getattr(event, "num", None)
+            if num == 4:
+                direction = 1
+            elif num == 5:
+                direction = -1
+        if direction == 0:
+            return None
+
+        state = int(getattr(event, "state", 0))
+        shift_down = bool(state & 0x0001)
+        if shift_down and self._zoom_cb is not None:
+            try:
+                self._zoom_cb(direction)
+            except Exception:
+                pass
+            return "break"
+        if self._scroll_cb is not None:
+            try:
+                self._scroll_cb(direction)
+            except Exception:
+                pass
+            return "break"
+        return None
+
+    def _on_zoom_wheel(self, event: tk.Event) -> Optional[str]:
         if self._zoom_cb is None:
             return None
         direction = 0
@@ -615,13 +653,13 @@ class ViewportCanvas(ttk.Frame):
                 direction = 1
             elif num == 5:
                 direction = -1
-        if direction != 0:
-            try:
-                self._zoom_cb(direction)
-            except Exception:
-                pass
-            return "break"
-        return None
+        if direction == 0:
+            return None
+        try:
+            self._zoom_cb(direction)
+        except Exception:
+            pass
+        return "break"
 
     def _on_capture(self) -> None:
         if self._capture_cb is None:
