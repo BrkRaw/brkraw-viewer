@@ -4,7 +4,7 @@ import datetime as dt
 import re
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, Union, cast
+from typing import Optional, Union, Sequence, cast
 
 from .helper import (
     crop_view as _crop_view, 
@@ -705,7 +705,9 @@ class ViewerController:
         self._pending_frame_requests = {}
         if self._view is not None and self._frame_request_after_id:
             try:
-                self._view.after_cancel(self._frame_request_after_id)
+                _after_cancel = getattr(self._view, "after_cancel", None)
+                if _after_cancel:
+                    _after_cancel(self._frame_request_after_id)
             except Exception:
                 pass
         self._frame_request_after_id = None
@@ -716,10 +718,15 @@ class ViewerController:
             return
         if self._frame_request_after_id:
             try:
-                self._view.after_cancel(self._frame_request_after_id)
+                _after_cancel = getattr(self._view, "after_cancel", None)
+                if _after_cancel:
+                    _after_cancel(self._frame_request_after_id)
             except Exception:
                 pass
-        self._frame_request_after_id = self._view.after(120, self._flush_frame_request)
+        _after = getattr(self._view, "after", None)
+        if _after is None:
+            return
+        self._frame_request_after_id = _after(120, self._flush_frame_request)
 
     def _flush_frame_request(self) -> None:
         self._frame_request_after_id = None
@@ -1436,7 +1443,7 @@ class ViewerController:
         parent = self._view.winfo_toplevel() if self._view is not None else None
         if parent is None:
             return None
-        win = tk.Toplevel(parent)
+        win = tk.Toplevel(cast(tk.Misc, parent))
         win.title("Timecourse")
         win.geometry("520x260")
         plot = PlotCanvas(win)
@@ -1563,7 +1570,7 @@ class ViewerController:
         meta = PlotMeta(title="Voxel timecourse", x_label="Frame", y_label="") if PlotMeta else None
         self._timecourse_plot.set_lines(
             x=x,
-            ys=[y],
+            ys=cast("Sequence[Sequence[float]]", [y]),
             meta=meta,
             y_fmt=lambda v: f"{v:.1E}",
         )
