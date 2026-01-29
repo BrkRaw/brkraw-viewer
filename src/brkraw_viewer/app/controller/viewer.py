@@ -78,6 +78,7 @@ class ViewerController:
         self._timecourse_window = None
         self._timecourse_plot = None
         self._timecourse_cache_path: Optional[str] = None
+        self._viewer_space_listeners: list[Callable[[str], None]] = []
         self._timecourse_cache_data: Optional[np.ndarray] = None
         self._timecourse_cache_job_id: Optional[str] = None
         self._frame_cache: "OrderedDict[int, dict]" = OrderedDict()
@@ -480,7 +481,8 @@ class ViewerController:
             res=view_res,
             crosshair=crosshair,
             show_crosshair=self.state.viewer.show_crosshair,
-            lock_scale=(zoom <= 1.0),
+            lock_scale=True,
+            allow_overflow=(zoom > 1.0),
         )
         value_text, plot_enabled = _resolve_value_display(
             vol=np.asarray(self._viewer_volume),
@@ -1446,7 +1448,17 @@ class ViewerController:
             self._view.set_viewer_subject_enabled(self.state.viewer.space == "subject_ras")
         if self._convert_use_viewer_orientation:
             self._sync_convert_orientation_from_viewer()
+        for cb in list(self._viewer_space_listeners):
+            try:
+                cb(self.state.viewer.space)
+            except Exception:
+                pass
         self._request_viewer_volume()
+
+    def register_viewer_space_listener(self, cb: Callable[[str], None]) -> None:
+        if not callable(cb):
+            return
+        self._viewer_space_listeners.append(cb)
 
     def _ensure_timecourse_window(self):
         if self._timecourse_window is not None and self._timecourse_window.winfo_exists():

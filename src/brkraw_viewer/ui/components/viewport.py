@@ -190,6 +190,7 @@ class ViewportCanvas(ttk.Frame):
         self._show_colorbar: bool = False
         self._allow_upsample: bool = True
         self._lock_mm_per_px: Optional[float] = None
+        self._allow_overflow: bool = False
 
         self._canvas.bind("<Configure>", self._on_resize)
         self._canvas.bind("<Button-1>", self._on_click)
@@ -498,6 +499,7 @@ class ViewportCanvas(ttk.Frame):
         colorbar_label: str = "",
         allow_upsample: bool = True,
         mm_per_px: Optional[float] = None,
+        allow_overflow: bool = False,
     ) -> None:
         self._last_base = np.asarray(base)
         self._last_title = str(title)
@@ -508,6 +510,7 @@ class ViewportCanvas(ttk.Frame):
         self._show_colorbar = bool(show_colorbar)
         self._allow_upsample = bool(allow_upsample)
         self._lock_mm_per_px = None if mm_per_px is None else float(mm_per_px)
+        self._allow_overflow = bool(allow_overflow)
 
         if show_colorbar and overlay is not None:
             self._right.grid()
@@ -723,7 +726,10 @@ class ViewportCanvas(ttk.Frame):
         lock_mm_per_px = self._lock_mm_per_px
         if lock_mm_per_px is not None and width_mm > 0 and height_mm > 0:
             min_mm_per_px = max(width_mm / max(cw, 1), height_mm / max(ch, 1))
-            mm_per_px = max(float(lock_mm_per_px), float(min_mm_per_px))
+            if self._allow_overflow:
+                mm_per_px = min(float(lock_mm_per_px), float(min_mm_per_px))
+            else:
+                mm_per_px = max(float(lock_mm_per_px), float(min_mm_per_px))
             tw = max(int(round(width_mm / mm_per_px)), 1)
             th = max(int(round(height_mm / mm_per_px)), 1)
         else:

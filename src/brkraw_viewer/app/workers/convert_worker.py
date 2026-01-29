@@ -527,6 +527,9 @@ def _resolve_affine_for_space(
     hook_args: dict,
 ):
     affine_kwargs = _filter_hook_kwargs(scan.get_affine, hook_args or {})
+    affine_kwargs["flip_x"] = flip_x
+    affine_kwargs["flip_y"] = flip_y
+    affine_kwargs["flip_z"] = flip_z
     selected_space = (space or "scanner").strip()
     if selected_space not in {"raw", "scanner", "subject_ras"}:
         selected_space = "scanner"

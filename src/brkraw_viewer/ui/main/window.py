@@ -313,6 +313,7 @@ class MainWindow(ttk.Frame):
         crosshair: dict | None = None,
         show_crosshair: bool = False,
         lock_scale: bool = True,
+        allow_overflow: bool = False,
     ) -> None:
         tab = self.tabs.get_tab("Viewer")
         target = getattr(tab, "_tab_instance", None)
@@ -324,6 +325,7 @@ class MainWindow(ttk.Frame):
                 crosshair=crosshair,
                 show_crosshair=show_crosshair,
                 lock_scale=lock_scale,
+                allow_overflow=allow_overflow,
             )
 
     def set_viewer_subject_enabled(self, enabled: bool) -> None:

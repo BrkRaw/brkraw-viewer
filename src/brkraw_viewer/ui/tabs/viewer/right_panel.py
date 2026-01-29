@@ -339,6 +339,7 @@ class ViewerRightPanel(ttk.Frame):
         crosshair: Optional[dict] = None,
         show_crosshair: bool = False,
         lock_scale: bool = True,
+        allow_overflow: bool = False,
     ) -> None:
         self._last_indices = indices
         if not views:
@@ -348,7 +349,11 @@ class ViewerRightPanel(ttk.Frame):
             return
         crosshair = crosshair or {}
         res = res or {}
-        lock_mm_per_px = self._compute_shared_mm_per_px(views, res) if lock_scale else None
+        lock_mm_per_px = (
+            self._compute_shared_mm_per_px(views, res, fill=allow_overflow)
+            if lock_scale
+            else None
+        )
         if "xz" in views:
             self._xz.set_view(
                 base=views["xz"],
@@ -357,6 +362,7 @@ class ViewerRightPanel(ttk.Frame):
                 crosshair=crosshair.get("xz"),
                 show_crosshair=show_crosshair,
                 mm_per_px=lock_mm_per_px,
+                allow_overflow=allow_overflow,
             )
         if "xy" in views:
             self._xy.set_view(
@@ -366,6 +372,7 @@ class ViewerRightPanel(ttk.Frame):
                 crosshair=crosshair.get("xy"),
                 show_crosshair=show_crosshair,
                 mm_per_px=lock_mm_per_px,
+                allow_overflow=allow_overflow,
             )
         if "zy" in views:
             self._zy.set_view(
@@ -375,6 +382,7 @@ class ViewerRightPanel(ttk.Frame):
                 crosshair=crosshair.get("zy"),
                 show_crosshair=show_crosshair,
                 mm_per_px=lock_mm_per_px,
+                allow_overflow=allow_overflow,
             )
 
     def set_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
@@ -389,6 +397,8 @@ class ViewerRightPanel(ttk.Frame):
         self,
         views: dict,
         res: dict[str, tuple[float, float]],
+        *,
+        fill: bool = False,
     ) -> Optional[float]:
         candidates: list[float] = []
         for plane, viewport in (("xz", self._xz), ("xy", self._xy), ("zy", self._zy)):
@@ -411,9 +421,18 @@ class ViewerRightPanel(ttk.Frame):
             cw, ch = viewport.get_canvas_size()
             if cw < 8 or ch < 8:
                 continue
-            candidates.append(max(width_mm / float(cw), height_mm / float(ch)))
+            if fill:
+                candidates.append(min(width_mm / float(cw), height_mm / float(ch)))
+            else:
+                candidates.append(max(width_mm / float(cw), height_mm / float(ch)))
         if not candidates:
             return None
+        if fill:
+            # Use the narrow-side fit as the fill target, with a small buffer.
+            min_mm = min(candidates)
+            max_mm = max(candidates)
+            relaxed = min_mm * 1.05
+            return min(relaxed, max_mm)
         return max(candidates)
 
     def _on_timecourse(self, callbacks) -> None:
