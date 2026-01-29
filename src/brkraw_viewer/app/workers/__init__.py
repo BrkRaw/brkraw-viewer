@@ -3,6 +3,8 @@ from .protocol import (
     ConvertResult,
     LoadVolumeRequest,
     LoadVolumeResult,
+    TimecourseCacheRequest,
+    TimecourseCacheResult,
     RegistryRequest,
     RegistryResult,
 )
@@ -13,6 +15,8 @@ __all__ = [
     "ConvertResult",
     "LoadVolumeRequest",
     "LoadVolumeResult",
+    "TimecourseCacheRequest",
+    "TimecourseCacheResult",
     "RegistryRequest",
     "RegistryResult",
     "create_shared_array",

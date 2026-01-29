@@ -55,8 +55,14 @@ class ViewerTab:
     def set_subject_values(self, subject_type: str, pose_primary: str, pose_secondary: str) -> None:
         self.top.set_subject_values(subject_type, pose_primary, pose_secondary)
 
-    def set_hook_state(self, hook_name: str, enabled: bool) -> None:
-        self.top.set_hook_state(hook_name, enabled)
+    def set_hook_state(self, hook_name: str, enabled: bool, *, allow_toggle: bool = True) -> None:
+        self.top.set_hook_state(hook_name, enabled, allow_toggle=allow_toggle)
 
     def set_hook_args(self, hook_args: dict | None) -> None:
         self.top.set_hook_args(hook_args)
+
+    def set_rgb_state(self, *, enabled: bool, active: bool) -> None:
+        self.top.set_rgb_state(enabled=enabled, active=active)
+
+    def set_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
+        self.right.set_value_display(value_text, plot_enabled=plot_enabled)

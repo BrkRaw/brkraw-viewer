@@ -102,6 +102,14 @@ class PlotCanvas(ttk.Frame):
         # Bars
         self._bar_labels: list[str] = []
         self._bar_heights: Optional[Sequence[float]] = None
+        self._vline_x: Optional[float] = None
+        self._x_fmt: Optional[Callable[[float], str]] = None
+        self._y_fmt: Optional[Callable[[float], str]] = None
+        self._on_click: Optional[Callable[[float], None]] = None
+        self._last_plot_bounds: Optional[Tuple[int, int, int, int]] = None
+        self._last_x_bounds: Optional[Tuple[float, float]] = None
+        self._capture_btn: Optional[tk.Widget] = None
+        self._capture_icon: Optional[tk.PhotoImage] = None
 
         # Redraw coalescing
         self._redraw_job: Optional[str] = None
@@ -109,6 +117,7 @@ class PlotCanvas(ttk.Frame):
 
         # Bind resize
         self._canvas.bind("<Configure>", self._on_configure)
+        self._canvas.bind("<Button-1>", self._on_click_event)
 
         # Initial
         self.set_message("No data")
@@ -120,8 +129,82 @@ class PlotCanvas(ttk.Frame):
     def set_message(self, text: str) -> None:
         self._mode = "message"
         self._message = text
+        self._last_plot_bounds = None
+        self._last_x_bounds = None
         self._schedule_redraw()
 
+    def set_vline(self, x: Optional[float]) -> None:
+        self._vline_x = x
+        self._schedule_redraw()
+
+    def set_on_click(self, handler: Optional[Callable[[float], None]]) -> None:
+        self._on_click = handler
+
+    def enable_capture(self, command: Optional[Callable[[], None]]) -> None:
+        if self._capture_btn is not None:
+            try:
+                self._capture_btn.destroy()
+            except Exception:
+                pass
+            self._capture_btn = None
+        if command is None:
+            return
+        try:
+            from ..assets import load_icon
+            from ..components.icon_button import IconButton
+
+            self._capture_icon = load_icon("viewport-capture.png", size=(12, 12), invert=True)
+            if self._capture_icon is not None:
+                self._capture_btn = IconButton(
+                    self._canvas,
+                    image=self._capture_icon,
+                    command=command,
+                    bg=self.theme.background,
+                )
+        except Exception:
+            self._capture_icon = None
+            self._capture_btn = None
+        if self._capture_btn is None:
+            self._capture_btn = tk.Button(
+                self._canvas,
+                text="Save",
+                width=4,
+                height=1,
+                font=("TkDefaultFont", 9),
+                bg=self.theme.background,
+                fg="#f6f6f6",
+                activebackground="#3a3a3a",
+                activeforeground="#ffff00",
+                highlightthickness=0,
+                borderwidth=0,
+                command=command,
+            )
+        self._capture_btn.place(relx=1.0, rely=1.0, x=-4, y=-4, anchor="se")
+
+    def capture_to_file(self, path: str) -> bool:
+        try:
+            self._canvas.update_idletasks()
+            x = self._canvas.winfo_rootx()
+            y = self._canvas.winfo_rooty()
+            w = self._canvas.winfo_width()
+            h = self._canvas.winfo_height()
+            from PIL import ImageGrab
+
+            img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+            img.save(path)
+            return True
+        except Exception:
+            pass
+        try:
+            import io
+            from PIL import Image
+
+            ps = self._canvas.postscript(colormode="color")
+            img = Image.open(io.BytesIO(ps.encode("utf-8")))
+            img.save(path)
+            return True
+        except Exception:
+            return False
     def clear(self) -> None:
         self._mode = "message"
         self._message = ""
@@ -145,6 +228,8 @@ class PlotCanvas(ttk.Frame):
         invert_x: bool = False,
         xlim: Optional[Tuple[float, float]] = None,
         ylim: Optional[Tuple[float, float]] = None,
+        x_fmt: Callable[[float], str] | None = None,
+        y_fmt: Callable[[float], str] | None = None,
     ) -> None:
         self._mode = "lines"
         self._x = x
@@ -152,6 +237,8 @@ class PlotCanvas(ttk.Frame):
         self._invert_x = bool(invert_x)
         self._xlim = xlim
         self._ylim = ylim
+        self._x_fmt = x_fmt
+        self._y_fmt = y_fmt
 
         self._meta = meta or PlotMeta()
 
@@ -252,10 +339,10 @@ class PlotCanvas(ttk.Frame):
             return
 
         # Layout
-        pad_l = 52
+        pad_l = 64
         pad_r = 16
-        pad_t = 22 if self._meta.title else 12
-        pad_b = 34
+        pad_t = 28 if self._meta.title else 16
+        pad_b = 36
 
         plot_l = pad_l
         plot_t = pad_t
@@ -412,8 +499,21 @@ class PlotCanvas(ttk.Frame):
 
         if self._invert_x:
             x_min, x_max = x_max, x_min
+        self._last_plot_bounds = (l, t, r, b)
+        self._last_x_bounds = (x_min, x_max)
 
-        self._draw_ticks(l, t, r, b, x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max)
+        self._draw_ticks(
+            l,
+            t,
+            r,
+            b,
+            x_min=x_min,
+            x_max=x_max,
+            y_min=y_min,
+            y_max=y_max,
+            x_fmt=self._x_fmt,
+            y_fmt=self._y_fmt,
+        )
 
         # Downsample
         plot_w = max(1, r - l)
@@ -448,7 +548,17 @@ class PlotCanvas(ttk.Frame):
             if len(pts) >= 4:
                 c.create_line(*pts, fill=style.color, width=style.width, smooth=False)
 
+        if self._vline_x is not None:
+            xv = float(self._vline_x)
+            if in_xrange(xv):
+                px = x_to_px(xv)
+                c.create_line(px, t, px, b, fill=self.theme.tick, dash=(2, 3), width=1)
+        self._last_plot_bounds = (l, t, r, b)
+        self._last_x_bounds = (x_min, x_max)
+
     def _draw_hist(self, l: int, t: int, r: int, b: int) -> None:
+        self._last_plot_bounds = (l, t, r, b)
+        self._last_x_bounds = None
         if self._hist_bins is None or self._hist_counts is None:
             self._draw_message(l, t, r, b)
             return
@@ -490,10 +600,11 @@ class PlotCanvas(ttk.Frame):
             c.create_rectangle(px0, py1, px1, b, outline="", fill="#6aa6ff")
 
     def _draw_bars(self, l: int, t: int, r: int, b: int) -> None:
+        self._last_plot_bounds = (l, t, r, b)
+        self._last_x_bounds = None
         if self._bar_heights is None or not self._bar_labels:
             self._draw_message(l, t, r, b)
             return
-
         heights = self._bar_heights
         n = min(len(self._bar_labels), len(heights))
         if n <= 0:
@@ -521,6 +632,24 @@ class PlotCanvas(ttk.Frame):
             # label (skip if too crowded)
             if bw >= 40:
                 c.create_text((x0 + x1) // 2, b + 6, text=self._bar_labels[i], fill=self.theme.tick, anchor="n")
+
+    def _on_click_event(self, event: tk.Event) -> None:
+        if self._on_click is None or self._mode != "lines":
+            return
+        if self._last_plot_bounds is None or self._last_x_bounds is None:
+            return
+        l, t, r, b = self._last_plot_bounds
+        if event.x < l or event.x > r or event.y < t or event.y > b:
+            return
+        x_min, x_max = self._last_x_bounds
+        if x_max == x_min:
+            return
+        tnorm = (event.x - l) / max((r - l), 1)
+        x_val = x_min + (x_max - x_min) * tnorm
+        try:
+            self._on_click(float(x_val))
+        except Exception:
+            return
 
 
 def _downsample_indices(n: int, max_points: int) -> list[int]:

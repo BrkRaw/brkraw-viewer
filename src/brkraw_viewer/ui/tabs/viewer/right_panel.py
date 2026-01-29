@@ -11,6 +11,8 @@ class ViewerRightPanel(ttk.Frame):
     def __init__(self, parent: tk.Misc, *, callbacks) -> None:
         super().__init__(parent)
         self._callbacks = callbacks
+        self._resize_job: Optional[str] = None
+        self._value_var = tk.StringVar(value="[ - ]")
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
@@ -63,6 +65,7 @@ class ViewerRightPanel(ttk.Frame):
         viewer_host.columnconfigure(1, weight=1)
         viewer_host.columnconfigure(2, weight=1)
         viewer_host.rowconfigure(0, weight=1)
+        viewer_host.bind("<Configure>", self._on_resize)
 
         self._xz = ViewportCanvas(viewer_host)
         self._xy = ViewportCanvas(viewer_host)
@@ -120,6 +123,19 @@ class ViewerRightPanel(ttk.Frame):
         )
         self._slicepack_scale.pack(side=tk.LEFT)
         self._slicepack_scale.configure(variable=self._slicepack_var)
+
+        value_bar = ttk.Frame(self)
+        value_bar.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+        value_bar.columnconfigure(1, weight=1)
+        ttk.Label(value_bar, text="Value").grid(row=0, column=0, sticky="w", padx=(2, 6))
+        self._value_button = ttk.Button(
+            value_bar,
+            textvariable=self._value_var,
+            command=lambda: self._on_timecourse(callbacks),
+            state="disabled",
+            width=26,
+        )
+        self._value_button.grid(row=0, column=1, sticky="w")
         self._slicepack_box = slicepack_box
         self._frame_box = frame_inner
         self._bottom_bar = bottom_bar
@@ -127,13 +143,18 @@ class ViewerRightPanel(ttk.Frame):
         self._slicepacks_count = 1
 
         self._last_indices: Optional[tuple[int, int, int]] = None
+        self._suspend_callbacks = False
 
     def _on_axis(self, callbacks, axis: str, value: str) -> None:
+        if self._suspend_callbacks:
+            return
         handler = getattr(callbacks, "on_viewer_axis_change", None)
         if callable(handler):
             handler(axis, int(float(value)))
 
     def _on_frame(self, callbacks, value: str) -> None:
+        if self._suspend_callbacks:
+            return
         handler = getattr(callbacks, "on_viewer_frame_change", None)
         if callable(handler):
             handler(int(float(value)))
@@ -165,11 +186,15 @@ class ViewerRightPanel(ttk.Frame):
             handler(axis, bool(enabled))
 
     def _on_slicepack(self, callbacks, value: str) -> None:
+        if self._suspend_callbacks:
+            return
         handler = getattr(callbacks, "on_viewer_slicepack_change", None)
         if callable(handler):
             handler(int(float(value)))
 
     def _on_extra_dim(self, index: int, value: str) -> None:
+        if self._suspend_callbacks:
+            return
         handler = getattr(self._callbacks, "on_viewer_extra_dim_change", None)
         if callable(handler):
             handler(int(index), int(float(value)))
@@ -256,11 +281,15 @@ class ViewerRightPanel(ttk.Frame):
             self._bottom_bar.grid()
 
     def set_indices(self, *, x: int, y: int, z: int, frame: int, slicepack: int) -> None:
-        self._x_var.set(int(x))
-        self._y_var.set(int(y))
-        self._z_var.set(int(z))
-        self._frame_var.set(int(frame))
-        self._slicepack_var.set(int(slicepack))
+        self._suspend_callbacks = True
+        try:
+            self._x_var.set(int(x))
+            self._y_var.set(int(y))
+            self._z_var.set(int(z))
+            self._frame_var.set(int(frame))
+            self._slicepack_var.set(int(slicepack))
+        finally:
+            self._suspend_callbacks = False
 
     def set_views(
         self,
@@ -308,6 +337,14 @@ class ViewerRightPanel(ttk.Frame):
                 mm_per_px=lock_mm_per_px,
             )
 
+    def set_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
+        self._value_var.set(value_text)
+        state = "normal" if plot_enabled else "disabled"
+        try:
+            self._value_button.configure(state=state)
+        except Exception:
+            pass
+
     def _compute_shared_mm_per_px(
         self,
         views: dict,
@@ -338,3 +375,19 @@ class ViewerRightPanel(ttk.Frame):
         if not candidates:
             return None
         return max(candidates)
+
+    def _on_timecourse(self, callbacks) -> None:
+        handler = getattr(callbacks, "on_viewer_timecourse_toggle", None)
+        if callable(handler):
+            handler()
+
+    def _on_resize(self, *_: object) -> None:
+        handler = getattr(self._callbacks, "on_viewer_resize", None)
+        if not callable(handler):
+            return
+        if self._resize_job is not None:
+            try:
+                self.after_cancel(self._resize_job)
+            except Exception:
+                pass
+        self._resize_job = self.after(50, handler)

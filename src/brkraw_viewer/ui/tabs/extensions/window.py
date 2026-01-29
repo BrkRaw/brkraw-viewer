@@ -12,6 +12,7 @@ logger = logging.getLogger("brkraw.viewer")
 
 class ExtensionsTab:
     TITLE = "Extensions"
+    _last_selected: Optional[str] = None
 
     def __init__(self, parent: tk.Misc, callbacks) -> None:
         self._cb = callbacks
@@ -76,11 +77,19 @@ class ExtensionsTab:
             return
 
         self._extensions_hooks = available
+        if ExtensionsTab._last_selected in available:
+            combo.set(ExtensionsTab._last_selected)
+            self._select_extension(ExtensionsTab._last_selected)
 
     def _on_extension_selected(self, *_: object) -> None:
         if self._extensions_container is None or self._extensions_combo is None:
             return
         name = self._extensions_combo.get()
+        self._select_extension(name)
+
+    def _select_extension(self, name: str) -> None:
+        if self._extensions_container is None:
+            return
         if self._extensions_current_widget is not None:
             try:
                 self._extensions_current_widget.destroy()
@@ -88,6 +97,8 @@ class ExtensionsTab:
                 pass
             self._extensions_current_widget = None
         if not name or name == "None":
+            ExtensionsTab._last_selected = None
+            self._fit_detached_window()
             return
         hook = self._extensions_hooks.get(name)
         if hook is None:
@@ -107,3 +118,35 @@ class ExtensionsTab:
             return
         widget.grid(row=0, column=0, sticky="nsew")
         self._extensions_current_widget = widget
+        ExtensionsTab._last_selected = name
+        self._fit_detached_window()
+
+    def _fit_detached_window(self) -> None:
+        if self._extensions_current_widget is None:
+            return
+        try:
+            win = self.frame.winfo_toplevel()
+        except Exception:
+            return
+        try:
+            if str(win.title()) != self.TITLE:
+                return
+        except Exception:
+            return
+        try:
+            win.update_idletasks()
+        except Exception:
+            pass
+        try:
+            req_w = int(self._extensions_current_widget.winfo_reqwidth())
+            req_h = int(self._extensions_current_widget.winfo_reqheight())
+        except Exception:
+            return
+        pad_w = 24
+        pad_h = 64
+        width = max(req_w + pad_w, 360)
+        height = max(req_h + pad_h, 240)
+        try:
+            win.geometry(f"{width}x{height}")
+        except Exception:
+            pass

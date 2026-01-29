@@ -18,6 +18,8 @@ from .protocol import (
     ConvertResult,
     LoadVolumeRequest,
     LoadVolumeResult,
+    TimecourseCacheRequest,
+    TimecourseCacheResult,
     RegistryRequest,
     RegistryResult,
 )
@@ -63,13 +65,23 @@ def _ensure_hook_state(loader: brkapi.BrukerLoader, scan_id: int, *, enable_hook
                 )
         except Exception as exc:
             logger.warning("Hook resolve failed for scan %s: %s", scan_id, exc)
-    else:
         try:
-            loader.reset_converter(scan)
+            scan._hook_enabled_state = True
         except Exception:
             pass
+    else:
+        was_enabled = bool(getattr(scan, "_hook_enabled_state", False))
+        if was_enabled:
+            try:
+                loader.reset_converter(scan)
+            except Exception:
+                pass
+            try:
+                scan._hook_resolved = False
+            except Exception:
+                pass
         try:
-            scan._hook_resolved = False
+            scan._hook_enabled_state = False
         except Exception:
             pass
     return scan
@@ -111,6 +123,9 @@ def run_worker(
                 continue
             if isinstance(task, LoadVolumeRequest):
                 _process_load_volume(task, output_queue)
+                continue
+            if isinstance(task, TimecourseCacheRequest):
+                _process_timecourse_cache(task, output_queue)
                 continue
             if isinstance(task, RegistryRequest):
                 _process_registry(task, output_queue)
@@ -384,6 +399,96 @@ def _process_load_volume(task: LoadVolumeRequest, output_queue: multiprocessing.
                 dtype="",
                 affine=None,
                 slicepacks=1,
+                frames=1,
+                error=str(exc),
+            )
+        )
+
+
+def _process_timecourse_cache(task: TimecourseCacheRequest, output_queue: multiprocessing.Queue) -> None:
+    try:
+        logger.debug(
+            "Timecourse cache start: scan=%s reco=%s slicepack=%s space=%s path=%s",
+            task.scan_id,
+            task.reco_id,
+            task.slicepack_index,
+            task.space,
+            task.cache_path,
+        )
+        loader = _get_loader(task.path)
+        scan = _ensure_hook_state(loader, task.scan_id, enable_hook=False)
+        data = scan.get_dataobj(task.reco_id, cycle_index=0, cycle_count=None)
+        if data is None:
+            output_queue.put(
+                TimecourseCacheResult(
+                    job_id=task.job_id,
+                    cache_path=None,
+                    shape=(),
+                    dtype="",
+                    frames=1,
+                    error="No data returned",
+                )
+            )
+            return
+        slicepacks = len(data) if isinstance(data, tuple) else 1
+        if isinstance(data, tuple):
+            idx = int(task.slicepack_index or 0)
+            if idx < 0 or idx >= len(data):
+                idx = 0
+            data = data[idx]
+        affine = _resolve_affine_for_space(
+            scan,
+            reco_id=task.reco_id,
+            space=task.space,
+            subject_type=task.subject_type,
+            subject_pose=task.subject_pose,
+            flip_x=task.flip_x,
+            flip_y=task.flip_y,
+            flip_z=task.flip_z,
+            hook_args={},
+        )
+        if isinstance(affine, tuple):
+            idx = int(task.slicepack_index or 0)
+            if idx < 0 or idx >= len(affine):
+                idx = 0
+            affine = affine[idx]
+        if affine is not None:
+            try:
+                from brkraw_viewer.utils.orientation import reorient_to_ras
+
+                data, _ = reorient_to_ras(np.asarray(data), np.asarray(affine))
+            except Exception:
+                data = np.asarray(data)
+        else:
+            data = np.asarray(data)
+        frames = 1
+        try:
+            if data.ndim >= 4:
+                frames = int(data.shape[3])
+        except Exception:
+            frames = 1
+        cache_path = Path(task.cache_path)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(cache_path, data, allow_pickle=False)
+        logger.debug("Timecourse cache saved: path=%s shape=%s dtype=%s", cache_path, data.shape, data.dtype)
+        output_queue.put(
+            TimecourseCacheResult(
+                job_id=task.job_id,
+                cache_path=str(cache_path),
+                shape=cast(np.ndarray, data).shape,
+                dtype=str(data.dtype),
+                frames=frames,
+                error=None,
+            )
+        )
+    except Exception as exc:
+        logger.error("Timecourse cache failed: %s", exc, exc_info=True)
+        output_queue.put(
+            TimecourseCacheResult(
+                job_id=task.job_id,
+                cache_path=None,
+                shape=(),
+                dtype="",
                 frames=1,
                 error=str(exc),
             )

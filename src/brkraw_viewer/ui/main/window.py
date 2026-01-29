@@ -336,11 +336,17 @@ class MainWindow(ttk.Frame):
         if target is not None and hasattr(target, "set_subject_values"):
             target.set_subject_values(subject_type, pose_primary, pose_secondary)
 
-    def set_viewer_hook_state(self, hook_name: str, enabled: bool, hook_args: Optional[dict]) -> None:
+    def set_viewer_rgb_state(self, *, enabled: bool, active: bool) -> None:
+        tab = self.tabs.get_tab("Viewer")
+        target = getattr(tab, "_tab_instance", None)
+        if target is not None and hasattr(target, "set_rgb_state"):
+            target.set_rgb_state(enabled=enabled, active=active)
+
+    def set_viewer_hook_state(self, hook_name: str, enabled: bool, hook_args: Optional[dict], *, allow_toggle: bool = True) -> None:
         tab = self.tabs.get_tab("Viewer")
         target = getattr(tab, "_tab_instance", None)
         if target is not None and hasattr(target, "set_hook_state"):
-            target.set_hook_state(hook_name, enabled)
+            target.set_hook_state(hook_name, enabled, allow_toggle=allow_toggle)
         if target is not None and hasattr(target, "set_hook_args"):
             target.set_hook_args(hook_args)
 
@@ -444,6 +450,12 @@ class MainWindow(ttk.Frame):
                 target.right.set_extra_dims(extra_dims or [], extra_indices or [])
             except Exception:
                 pass
+
+    def set_viewer_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
+        tab = self.tabs.get_tab("Viewer")
+        target = getattr(tab, "_tab_instance", None)
+        if target is not None and hasattr(target, "set_value_display"):
+            target.set_value_display(value_text, plot_enabled=plot_enabled)
 
     def refresh_addons(self) -> None:
         tab = self.tabs.get_tab("Addons")

@@ -86,10 +86,16 @@ class ParamsTab:
         results_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
         results_frame.columnconfigure(0, weight=1)
         results_frame.rowconfigure(0, weight=1)
-        results_frame.rowconfigure(1, weight=0)
+
+        paned = ttk.Panedwindow(results_frame, orient=tk.VERTICAL)
+        paned.grid(row=0, column=0, sticky="nsew")
+        results_frame.rowconfigure(0, weight=1)
 
         columns = ("file", "key", "type", "value")
-        tree = ttk.Treeview(results_frame, columns=columns, show="headings")
+        tree_frame = ttk.Frame(paned)
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
         tree.grid(row=0, column=0, sticky="nsew")
         tree.heading("file", text="File", anchor="w", command=lambda: self._params_sort_by("file"))
         tree.heading("key", text="Key", anchor="w", command=lambda: self._params_sort_by("key"))
@@ -102,17 +108,18 @@ class ParamsTab:
         self._params_tree = tree
         self._update_params_sort_heading()
 
-        vscroll = ttk.Scrollbar(results_frame, orient="vertical", command=tree.yview)
+        vscroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
         vscroll.grid(row=0, column=1, sticky="ns")
         tree.configure(yscrollcommand=vscroll.set)
         tree.bind("<<TreeviewSelect>>", self._on_result_select)
 
-        detail_frame = ttk.LabelFrame(results_frame, text="Value Detail", padding=(6, 4))
-        detail_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        detail_frame = ttk.LabelFrame(paned, text="Value Detail", padding=(6, 4))
         detail_frame.columnconfigure(0, weight=1)
         self._detail_text = tk.Text(detail_frame, height=4, wrap="word")
         self._detail_text.grid(row=0, column=0, sticky="ew")
         self._detail_text.configure(state=tk.DISABLED)
+        paned.add(tree_frame, weight=3)
+        paned.add(detail_frame, weight=1)
 
     def _run_param_search(self) -> None:
         query = (self._param_query_var.get() or "").strip()
@@ -180,6 +187,8 @@ class ParamsTab:
             return
         values = self._params_tree.item(items[0], "values")
         value = values[3] if len(values) > 3 else ""
+        if isinstance(value, str):
+            value = value.replace("\\n", "\n")
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
         self._detail_text.insert(tk.END, str(value))

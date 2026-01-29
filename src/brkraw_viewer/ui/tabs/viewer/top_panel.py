@@ -84,14 +84,22 @@ class ViewerTopPanel(ttk.Frame):
         mid.place(relx=0.5, rely=0.0, anchor="n", width=160)
         mid.columnconfigure(0, weight=1)
         self._crosshair_var = tk.BooleanVar(value=True)
+        self._rgb_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             mid,
             text="Crosshair",
             variable=self._crosshair_var,
             command=lambda: self._on_crosshair(callbacks),
         ).grid(row=0, column=0, pady=(0, 4))
+        self._rgb_check = ttk.Checkbutton(
+            mid,
+            text="RGB",
+            variable=self._rgb_var,
+            command=lambda: self._on_rgb(callbacks),
+        )
+        self._rgb_check.grid(row=1, column=0, pady=(0, 4))
         zoom_row = ttk.Frame(mid)
-        zoom_row.grid(row=1, column=0, pady=(4, 0))
+        zoom_row.grid(row=2, column=0, pady=(4, 0))
         ttk.Label(zoom_row, text="Zoom").pack(side=tk.LEFT, padx=(0, 4))
         self._zoom_scale = tk.Scale(
             zoom_row,
@@ -190,6 +198,11 @@ class ViewerTopPanel(ttk.Frame):
         if callable(handler):
             handler(self._crosshair_var.get())
 
+    def _on_rgb(self, callbacks) -> None:
+        handler = getattr(callbacks, "on_viewer_rgb_toggle", None)
+        if callable(handler):
+            handler(self._rgb_var.get())
+
     def _on_zoom(self, callbacks, value: str) -> None:
         handler = getattr(callbacks, "on_viewer_zoom_change", None)
         if callable(handler):
@@ -243,3 +256,11 @@ class ViewerTopPanel(ttk.Frame):
 
     def set_hook_args(self, hook_args: dict | None) -> None:
         self._hook_args = dict(hook_args) if isinstance(hook_args, dict) else None
+
+    def set_rgb_state(self, *, enabled: bool, active: bool) -> None:
+        self._rgb_var.set(bool(active))
+        state = "normal" if enabled else "disabled"
+        try:
+            self._rgb_check.configure(state=state)
+        except Exception:
+            pass

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional, Union, cast
 
@@ -25,6 +26,8 @@ from ..workers.protocol import (
     ConvertResult,
     LoadVolumeRequest,
     LoadVolumeResult,
+    TimecourseCacheRequest,
+    TimecourseCacheResult,
     RegistryRequest,
     RegistryResult,
 )
@@ -38,6 +41,7 @@ from brkraw.api.types import (
     SubjectPose,
     AffineSpace,
 )
+import hashlib
 
 import numpy as np
 import logging
@@ -54,6 +58,7 @@ class ViewerController:
         self._worker = WorkerManager(
             on_convert_result=self._on_convert_result,
             on_volume_result=self._on_volume_result,
+            on_timecourse_cache_result=self._on_timecourse_cache_result,
             on_registry_result=self._on_registry_result,
         )
         self._popups: dict[str, TaskPopup] = {}
@@ -68,7 +73,17 @@ class ViewerController:
         self._viewer_hook_enabled = False
         self._viewer_hook_name: Optional[str] = None
         self._viewer_hook_args: Optional[dict] = None
+        self._viewer_hook_locked: bool = False
         self._hook_args_by_name: dict[str, dict] = {}
+        self._timecourse_window = None
+        self._timecourse_plot = None
+        self._timecourse_cache_path: Optional[str] = None
+        self._timecourse_cache_data: Optional[np.ndarray] = None
+        self._timecourse_cache_job_id: Optional[str] = None
+        self._frame_cache: "OrderedDict[int, dict]" = OrderedDict()
+        self._frame_cache_limit = 8
+        self._pending_frame_requests: dict[str, int] = {}
+        self._frame_request_after_id: Optional[str] = None
         self._convert_hook_enabled: bool = True
         self._viewer_slicepacks = 1
         self._viewer_frames = 1
@@ -203,8 +218,62 @@ class ViewerController:
             prev_frame,
             self.state.viewer.frame_index,
         )
+        frame_key = self._pending_frame_requests.pop(result.job_id, None)
+        if frame_key is not None:
+            self._frame_cache[frame_key] = {
+                "volume": self._viewer_volume,
+                "raw": self._viewer_raw_volume,
+                "affine": self._viewer_raw_affine,
+                "shape": self._viewer_shape,
+                "frames": self._viewer_frames,
+                "slicepacks": self._viewer_slicepacks,
+                "res": self._viewer_res,
+            }
+            while len(self._frame_cache) > self._frame_cache_limit:
+                self._frame_cache.popitem(last=False)
+        else:
+            self._frame_cache.clear()
         self._render_viewer_views()
         if self._view is not None:
+            self._view.set_status("Volume loaded.")
+
+    def _on_timecourse_cache_result(self, result: TimecourseCacheResult) -> None:
+        if self._timecourse_cache_job_id and result.job_id != self._timecourse_cache_job_id:
+            return
+        self._timecourse_cache_job_id = None
+        logger.debug(
+            "Timecourse cache result: job=%s error=%s path=%s shape=%s frames=%s",
+            result.job_id,
+            result.error,
+            result.cache_path,
+            result.shape,
+            result.frames,
+        )
+        if result.error:
+            if self._timecourse_plot is not None:
+                self._timecourse_plot.set_message(f"Cache failed: {result.error}")
+            if self._view is not None:
+                self._view.set_status(f"Timecourse cache failed: {result.error}")
+            return
+        if not result.cache_path:
+            if self._timecourse_plot is not None:
+                self._timecourse_plot.set_message("Cache failed.")
+            if self._view is not None:
+                self._view.set_status("Timecourse cache failed.")
+            return
+        self._timecourse_cache_path = result.cache_path
+        try:
+            self._timecourse_cache_data = np.load(result.cache_path, mmap_mode="r")
+        except Exception:
+            self._timecourse_cache_data = None
+            if self._timecourse_plot is not None:
+                self._timecourse_plot.set_message("Cache load failed.")
+            if self._view is not None:
+                self._view.set_status("Timecourse cache failed.")
+            return
+        self._update_timecourse_plot()
+        if self._view is not None:
+            self._view.set_status("Timecourse cached.")
             try:
                 current = self._view.get_selected_tab()
             except Exception:
@@ -324,6 +393,7 @@ class ViewerController:
         vol = self._viewer_volume
         if vol is None:
             self._view.set_viewer_views({})
+            self._view.set_viewer_value_display("[ - ]", plot_enabled=False)
             return
         logger.debug(
             "Render views: shape=%s frame=%s slicepack=%s",
@@ -332,8 +402,9 @@ class ViewerController:
             self.state.viewer.slicepack_index,
         )
         data = np.asarray(vol)
+        rgb_candidate = bool(data.ndim == 4 and data.shape[3] == 3)
         extra_dims = list(data.shape[4:]) if data.ndim > 4 else []
-        if data.ndim >= 4:
+        if data.ndim >= 4 and not (rgb_candidate and self.state.viewer.rgb_mode):
             frame_idx = min(max(self.state.viewer.frame_index, 0), data.shape[3] - 1)
             slices: list[slice | int] = [slice(None)] * data.ndim
             slices[3] = frame_idx
@@ -343,6 +414,11 @@ class ViewerController:
                     idx = extra_indices[i] if i < len(extra_indices) else 0
                     slices[4 + i] = min(max(int(idx), 0), max(int(size) - 1, 0))
             data = data[tuple(slices)]
+        rgb_eligible = bool(rgb_candidate)
+        if not rgb_eligible and self.state.viewer.rgb_mode:
+            self.state.viewer.rgb_mode = False
+        if self._view is not None:
+            self._view.set_viewer_rgb_state(enabled=rgb_eligible, active=self.state.viewer.rgb_mode)
         if data.ndim < 3:
             return
         x, y, z = data.shape[:3]
@@ -350,6 +426,8 @@ class ViewerController:
         yi = min(max(self.state.viewer.y_index, 0), y - 1)
         zi = min(max(self.state.viewer.z_index, 0), z - 1)
         frames = self._viewer_frames
+        if rgb_eligible and self.state.viewer.rgb_mode:
+            frames = 1
         slicepacks = self._viewer_slicepacks
         self._view.set_viewer_ranges(
             x=x,
@@ -363,7 +441,7 @@ class ViewerController:
             extra_dims=extra_dims,
             extra_indices=self.state.viewer.extra_indices,
         )
-        if data.ndim == 4 and data.shape[3] == 3:
+        if data.ndim == 4 and data.shape[3] == 3 and self.state.viewer.rgb_mode:
             img_zy = data[xi, :, :, :]              # (y, z, 3)
             img_xy = data[:, :, zi, :].transpose(1, 0, 2)  # (y, x, 3)
             img_xz = data[:, yi, :, :].transpose(1, 0, 2)  # (z, x, 3)
@@ -403,6 +481,15 @@ class ViewerController:
             crosshair=crosshair,
             show_crosshair=self.state.viewer.show_crosshair,
         )
+        value_text, plot_enabled = _resolve_value_display(
+            vol=np.asarray(self._viewer_volume),
+            indices=(xi, yi, zi),
+            frame=self.state.viewer.frame_index,
+            extra_indices=self.state.viewer.extra_indices,
+            rgb_mode=self.state.viewer.rgb_mode,
+        )
+        self._view.set_viewer_value_display(value_text, plot_enabled=plot_enabled)
+        self._update_timecourse_plot(indices=(xi, yi, zi))
         if self._view is not None:
             label = f"Slicepack {self.state.viewer.slicepack_index + 1}/{slicepacks}"
             self._view.set_viewer_status(f"Space: {self.state.viewer.space} (RAS) | {label}")
@@ -414,9 +501,11 @@ class ViewerController:
         self._viewer_shape = None
         self._viewer_res = (1.0, 1.0, 1.0)
         self._viewer_fov = None
+        self._clear_frame_cache()
         if self._view is None:
             return
         self._view.set_viewer_views({})
+        self._view.set_viewer_value_display("[ - ]", plot_enabled=False)
         if status:
             self._view.set_viewer_status(status)
 
@@ -450,6 +539,12 @@ class ViewerController:
             ):
                 cycle_index = None
                 cycle_count = None
+        self._pending_frame_requests = {}
+        if cycle_index is not None and cycle_count == 1 and not self._viewer_hook_enabled:
+            try:
+                self._pending_frame_requests[job_id] = int(cycle_index)
+            except Exception:
+                pass
         req = LoadVolumeRequest(
             job_id=job_id,
             path=str(self.state.dataset.path),
@@ -471,6 +566,79 @@ class ViewerController:
         if self._view is not None:
             self._view.set_status("Loading volume...")
 
+    def _request_timecourse_cache(self) -> None:
+        if self.state.dataset.path is None:
+            return
+        sid = self.state.dataset.selected_scan_id
+        rid = self.state.dataset.selected_reco_id
+        if sid is None or rid is None:
+            return
+        if self._timecourse_cache_job_id is not None:
+            if self._view is not None:
+                self._view.set_status("Caching timecourse volume...")
+            return
+        cache_path = self._resolve_timecourse_cache_path()
+        if self._timecourse_cache_path and self._timecourse_cache_path != cache_path:
+            self._clear_timecourse_cache()
+        self._timecourse_cache_path = cache_path
+        job_id = f"timecourse-cache-{dt.datetime.now().timestamp()}"
+        self._timecourse_cache_job_id = job_id
+        req = TimecourseCacheRequest(
+            job_id=job_id,
+            path=str(self.state.dataset.path),
+            scan_id=int(sid),
+            reco_id=int(rid),
+            cache_path=cache_path,
+            slicepack_index=self.state.viewer.slicepack_index,
+            space=self.state.viewer.space,
+            subject_type=self.state.viewer.subject_type if self.state.viewer.space == "subject_ras" else None,
+            subject_pose=self.state.viewer.subject_pose if self.state.viewer.space == "subject_ras" else None,
+            flip_x=self.state.viewer.flip_x,
+            flip_y=self.state.viewer.flip_y,
+            flip_z=self.state.viewer.flip_z,
+        )
+        logger.debug(
+            "Timecourse cache request: scan=%s reco=%s slicepack=%s space=%s path=%s",
+            sid,
+            rid,
+            self.state.viewer.slicepack_index,
+            self.state.viewer.space,
+            cache_path,
+        )
+        self._worker.submit(req)
+        if self._view is not None:
+            self._view.set_status("Caching timecourse volume...")
+
+    def _request_full_viewer_volume(self) -> None:
+        if self.state.dataset.path is None:
+            return
+        sid = self.state.dataset.selected_scan_id
+        rid = self.state.dataset.selected_reco_id
+        if sid is None or rid is None:
+            return
+        job_id = f"viewer-full-{dt.datetime.now().timestamp()}"
+        self._viewer_job_id = job_id
+        req = LoadVolumeRequest(
+            job_id=job_id,
+            path=str(self.state.dataset.path),
+            scan_id=int(sid),
+            reco_id=int(rid),
+            cycle_index=None,
+            cycle_count=None,
+            hook_name=None,
+            hook_args=None,
+            slicepack_index=self.state.viewer.slicepack_index,
+            space=self.state.viewer.space,
+            subject_type=self.state.viewer.subject_type if self.state.viewer.space == "subject_ras" else None,
+            subject_pose=self.state.viewer.subject_pose if self.state.viewer.space == "subject_ras" else None,
+            flip_x=self.state.viewer.flip_x,
+            flip_y=self.state.viewer.flip_y,
+            flip_z=self.state.viewer.flip_z,
+        )
+        self._worker.submit(req)
+        if self._view is not None:
+            self._view.set_status("Loading full volume...")
+
     def _update_subject_summary(self) -> None:
         if self._view is None:
             return
@@ -487,6 +655,92 @@ class ViewerController:
             study_date=summary_study_date,
         )
 
+    def _reset_viewer_hook_state(self) -> None:
+        self._viewer_hook_locked = False
+        self.state.viewer.hook_locked = False
+        self._viewer_hook_enabled = False
+        if self._view is not None:
+            self._view.set_viewer_hook_state(
+                self._viewer_hook_name or "None",
+                self._viewer_hook_enabled,
+                self._viewer_hook_args,
+                allow_toggle=True,
+            )
+
+    def _resolve_timecourse_cache_path(self) -> str:
+        base = Path.home() / ".brkraw" / "cache" / "viewer"
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        parts = [
+            "timecourse",
+            "full",
+            str(self.state.dataset.path or ""),
+            str(self.state.dataset.selected_scan_id or ""),
+            str(self.state.dataset.selected_reco_id or ""),
+            str(self.state.viewer.space or ""),
+            str(self.state.viewer.subject_type or ""),
+            str(self.state.viewer.subject_pose or ""),
+            str(int(self.state.viewer.flip_x)),
+            str(int(self.state.viewer.flip_y)),
+            str(int(self.state.viewer.flip_z)),
+            str(int(self.state.viewer.slicepack_index)),
+        ]
+        key = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()
+        return str(base / f"{key}.npy")
+
+    def _clear_timecourse_cache(self) -> None:
+        if self._timecourse_cache_path:
+            try:
+                Path(self._timecourse_cache_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        self._timecourse_cache_path = None
+        self._timecourse_cache_data = None
+        self._timecourse_cache_job_id = None
+
+    def _clear_frame_cache(self) -> None:
+        self._frame_cache.clear()
+        self._pending_frame_requests = {}
+        if self._view is not None and self._frame_request_after_id:
+            try:
+                self._view.after_cancel(self._frame_request_after_id)
+            except Exception:
+                pass
+        self._frame_request_after_id = None
+
+    def _schedule_frame_request(self) -> None:
+        if self._view is None:
+            self._request_viewer_volume()
+            return
+        if self._frame_request_after_id:
+            try:
+                self._view.after_cancel(self._frame_request_after_id)
+            except Exception:
+                pass
+        self._frame_request_after_id = self._view.after(120, self._flush_frame_request)
+
+    def _flush_frame_request(self) -> None:
+        self._frame_request_after_id = None
+        self._request_viewer_volume()
+
+    def _apply_cached_frame(self, frame_index: int) -> bool:
+        if frame_index not in self._frame_cache:
+            return False
+        entry = self._frame_cache.pop(frame_index)
+        self._frame_cache[frame_index] = entry
+        self._viewer_volume = entry.get("volume")
+        self._viewer_raw_volume = entry.get("raw")
+        self._viewer_raw_affine = entry.get("affine")
+        self._viewer_shape = entry.get("shape")
+        self._viewer_frames = entry.get("frames", self._viewer_frames)
+        self._viewer_slicepacks = entry.get("slicepacks", self._viewer_slicepacks)
+        self._viewer_res = entry.get("res", self._viewer_res)
+        self._update_viewer_indices_from_shape()
+        self._render_viewer_views()
+        return True
+
     def _refresh_hook_state_for_scan(self, scan_id: int) -> None:
         hook_name = self.dataset.get_converter_hook_name(scan_id)
         logger.debug("Hook state for scan %s: name=%s", scan_id, hook_name)
@@ -497,7 +751,12 @@ class ViewerController:
         self._viewer_hook_enabled = False
         self._viewer_hook_args = self._hook_args_by_name.get(self._viewer_hook_name or "", None)
         if self._view is not None:
-            self._view.set_viewer_hook_state(self._viewer_hook_name or "None", self._viewer_hook_enabled, self._viewer_hook_args)
+            self._view.set_viewer_hook_state(
+                self._viewer_hook_name or "None",
+                self._viewer_hook_enabled,
+                self._viewer_hook_args,
+                allow_toggle=not self._viewer_hook_locked,
+            )
             convert_enabled = self._convert_hook_enabled and bool(self._viewer_hook_name)
             self._view.set_convert_hook_state(self._viewer_hook_name or "None", convert_enabled, self._viewer_hook_args)
             self._view.refresh_addons()
@@ -691,6 +950,9 @@ class ViewerController:
     def action_open_dataset(self, path: Path) -> None:
         logger.debug("Open dataset: %s", path)
         summary = self.dataset.open_dataset(path)
+        self._reset_viewer_hook_state()
+        self._clear_timecourse_cache()
+        self._clear_frame_cache()
         self._convert_layout_cache_key = None
         self.state.dataset.path = summary.path
         self.state.dataset.is_open = True
@@ -715,18 +977,27 @@ class ViewerController:
         self.state.dataset.is_open = False
         self.state.dataset.selected_scan_id = None
         self.state.dataset.selected_reco_id = None
+        self._viewer_hook_enabled = False
+        self._viewer_hook_name = None
+        self._viewer_hook_args = None
+        self._viewer_hook_locked = False
+        self.state.viewer.hook_locked = False
+        self._clear_timecourse_cache()
         self._clear_viewer_volume(status="No dataset open.")
         self._sync_view()
         self._update_params_summary()
         self._update_subject_summary()
         if self._view is not None:
-            self._view.set_viewer_hook_state("None", False, None)
+            self._view.set_viewer_hook_state("None", False, None, allow_toggle=True)
             self._view.set_convert_hook_state("None", False, None)
 
     def action_select_scan(self, scan_id: int) -> None:
         logger.debug("Select scan: %s", scan_id)
         self.state.dataset.selected_scan_id = int(scan_id)
         self.state.dataset.selected_reco_id = None
+        self._reset_viewer_hook_state()
+        self._clear_timecourse_cache()
+        self._clear_viewer_volume(status="No image loaded.")
         self.dataset.materialize_scan(int(scan_id))
         if self._view is not None:
             self._view.set_status(f"Selected scan: {scan_id}")
@@ -746,6 +1017,9 @@ class ViewerController:
     def action_select_reco(self, reco_id: int) -> None:
         logger.debug("Select reco: %s", reco_id)
         self.state.dataset.selected_reco_id = int(reco_id)
+        self._reset_viewer_hook_state()
+        self._clear_timecourse_cache()
+        self._clear_frame_cache()
         if self._view is not None:
             sid = self.state.dataset.selected_scan_id
             self._view.set_status(f"Selected scan {sid} reco {reco_id}")
@@ -966,10 +1240,17 @@ class ViewerController:
 
     def on_viewer_frame_change(self, value: int) -> None:
         self.state.viewer.frame_index = int(value)
+        if self._timecourse_plot is not None:
+            try:
+                self._timecourse_plot.set_vline(float(self.state.viewer.frame_index))
+            except Exception:
+                pass
         if self._viewer_hook_enabled:
             self._render_viewer_views()
         else:
-            self._request_viewer_volume()
+            if self._apply_cached_frame(self.state.viewer.frame_index):
+                return
+            self._schedule_frame_request()
 
     def on_viewer_hook_toggle(self, enabled: bool, hook_name: Optional[str]) -> None:
         logger.debug("Viewer hook toggle: enabled=%s name=%s", enabled, hook_name)
@@ -981,7 +1262,7 @@ class ViewerController:
         if not self._viewer_hook_name:
             self._viewer_hook_enabled = False
             if self._view is not None:
-                self._view.set_viewer_hook_state("None", False, None)
+                self._view.set_viewer_hook_state("None", False, None, allow_toggle=not self._viewer_hook_locked)
             return
         if bool(enabled):
             try:
@@ -993,7 +1274,13 @@ class ViewerController:
         else:
             self._viewer_hook_enabled = False
         if self._view is not None:
-            self._view.set_viewer_hook_state(self._viewer_hook_name or "None", self._viewer_hook_enabled, self._viewer_hook_args)
+            self._view.set_viewer_hook_state(
+                self._viewer_hook_name or "None",
+                self._viewer_hook_enabled,
+                self._viewer_hook_args,
+                allow_toggle=not self._viewer_hook_locked,
+            )
+        self._clear_frame_cache()
         self._request_viewer_volume()
 
     def on_viewer_flip_change(self, axis: str, enabled: bool) -> None:
@@ -1006,6 +1293,7 @@ class ViewerController:
             st.flip_y = bool(enabled)
         elif axis_norm == "z":
             st.flip_z = bool(enabled)
+        self._clear_frame_cache()
         if self._viewer_raw_volume is not None:
             affine = None
             sid = self.state.dataset.selected_scan_id
@@ -1051,6 +1339,7 @@ class ViewerController:
 
     def on_viewer_slicepack_change(self, value: int) -> None:
         self.state.viewer.slicepack_index = int(value)
+        self._clear_frame_cache()
         self._request_viewer_volume()
 
     def on_viewer_extra_dim_change(self, index: int, value: int) -> None:
@@ -1073,6 +1362,10 @@ class ViewerController:
         self.state.viewer.show_crosshair = bool(enabled)
         self._render_viewer_views()
 
+    def on_viewer_rgb_toggle(self, enabled: bool) -> None:
+        self.state.viewer.rgb_mode = bool(enabled)
+        self._render_viewer_views()
+
     def on_viewer_zoom_change(self, value: float) -> None:
         try:
             self.state.viewer.zoom = max(1.0, min(4.0, float(value)))
@@ -1080,14 +1373,201 @@ class ViewerController:
             self.state.viewer.zoom = 1.0
         self._render_viewer_views()
 
+    def on_viewer_resize(self) -> None:
+        self._render_viewer_views()
+
+    def on_viewer_timecourse_toggle(self) -> None:
+        if self._view is None:
+            return
+        win = self._ensure_timecourse_window()
+        if win is None:
+            return
+        try:
+            win.lift()
+        except Exception:
+            pass
+        if self._viewer_volume is None:
+            if self._timecourse_plot is not None:
+                self._timecourse_plot.set_message("Load image first.")
+            return
+        cache_path = self._resolve_timecourse_cache_path()
+        if self._timecourse_cache_path == cache_path:
+            if self._timecourse_cache_data is None and Path(cache_path).exists():
+                try:
+                    self._timecourse_cache_data = np.load(cache_path, mmap_mode="r")
+                except Exception:
+                    self._timecourse_cache_data = None
+            if self._timecourse_cache_data is not None:
+                self._update_timecourse_plot()
+                return
+        vol = self._viewer_volume
+        need_full = True
+        if vol is not None:
+            try:
+                arr = np.asarray(vol)
+                need_full = not (arr.ndim >= 4 and int(arr.shape[3]) > 1)
+            except Exception:
+                need_full = True
+        if need_full:
+            if self._timecourse_plot is not None:
+                self._timecourse_plot.set_message("Loading full volume...")
+            self._request_timecourse_cache()
+        else:
+            self._update_timecourse_plot()
+
     def on_viewer_space_change(self, value: str) -> None:
         logger.debug("Viewer space change: %s", value)
         self.state.viewer.space = str(value)
+        self._clear_frame_cache()
         if self._view is not None:
             self._view.set_viewer_subject_enabled(self.state.viewer.space == "subject_ras")
         if self._convert_use_viewer_orientation:
             self._sync_convert_orientation_from_viewer()
         self._request_viewer_volume()
+
+    def _ensure_timecourse_window(self):
+        if self._timecourse_window is not None and self._timecourse_window.winfo_exists():
+            return self._timecourse_window
+        try:
+            import tkinter as tk
+            from brkraw_viewer.ui.components.plotter import PlotCanvas, PlotMeta
+        except Exception:
+            return None
+        parent = self._view.winfo_toplevel() if self._view is not None else None
+        if parent is None:
+            return None
+        win = tk.Toplevel(parent)
+        win.title("Timecourse")
+        win.geometry("520x260")
+        plot = PlotCanvas(win)
+        plot.pack(fill="both", expand=True)
+        plot.set_message("No data")
+        plot.set_on_click(self._on_timecourse_click)
+        plot.enable_capture(self._on_timecourse_capture)
+        self._timecourse_window = win
+        self._timecourse_plot = plot
+        _center_window(win, parent)
+
+        def _on_close() -> None:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+            self._timecourse_window = None
+            self._timecourse_plot = None
+            self._clear_timecourse_cache()
+
+        win.protocol("WM_DELETE_WINDOW", _on_close)
+        return win
+
+    def _on_timecourse_click(self, x_value: float) -> None:
+        try:
+            idx = int(round(x_value))
+        except Exception:
+            return
+        total_frames = self._viewer_frames
+        data = self._timecourse_cache_data
+        if data is not None:
+            try:
+                if data.ndim >= 4:
+                    total_frames = int(data.shape[3])
+            except Exception:
+                pass
+        if total_frames <= 0:
+            return
+        if idx < 0:
+            idx = 0
+        elif idx >= total_frames:
+            idx = total_frames - 1
+        self.on_viewer_frame_change(idx)
+
+    def _on_timecourse_capture(self) -> None:
+        if self._timecourse_plot is None:
+            return
+        if self.state.dataset.path is None:
+            if self._view is not None:
+                self._view.set_status("No dataset open.")
+            return
+        sid = self.state.dataset.selected_scan_id
+        rid = self.state.dataset.selected_reco_id
+        if sid is None or rid is None:
+            if self._view is not None:
+                self._view.set_status("Select scan/reco first.")
+            return
+        output_dir = self._convert_output_dir or Path.cwd()
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        prefix = self._capture_output_prefix(scan_id=int(sid), reco_id=int(rid))
+        x = int(self.state.viewer.x_index)
+        y = int(self.state.viewer.y_index)
+        z = int(self.state.viewer.z_index)
+        path = _capture_output_path(output_dir, prefix, x=x, y=y, z=z, plane="timecourse")
+        try:
+            from tkinter import messagebox
+
+            ok = messagebox.askyesno("Timecourse Capture", f"Save capture to:\n{path}")
+        except Exception:
+            ok = True
+        if not ok:
+            return
+        if not self._timecourse_plot.capture_to_file(str(path)):
+            if self._view is not None:
+                self._view.set_status("Timecourse capture failed.")
+
+    def _update_timecourse_plot(self, *, indices: Optional[tuple[int, int, int]] = None) -> None:
+        if self._timecourse_plot is None or self._timecourse_window is None:
+            return
+        try:
+            from brkraw_viewer.ui.components.plotter import PlotMeta
+        except Exception:
+            PlotMeta = None
+        vol = self._viewer_volume
+        data = self._timecourse_cache_data
+        if data is None:
+            vol = self._viewer_volume
+            if vol is None:
+                self._timecourse_plot.set_message("No data")
+                return
+            data = np.asarray(vol)
+        if data.ndim < 4:
+            self._timecourse_plot.set_message("Timecourse requires 4D data.")
+            return
+        if indices is None:
+            indices = (
+                int(self.state.viewer.x_index),
+                int(self.state.viewer.y_index),
+                int(self.state.viewer.z_index),
+            )
+        xi, yi, zi = indices
+        extra_indices = self.state.viewer.extra_indices or []
+        slicer: list[slice | int] = [xi, yi, zi, slice(None)]
+        if data.ndim > 4:
+            for i in range(4, data.ndim):
+                idx = extra_indices[i - 4] if (i - 4) < len(extra_indices) else 0
+                slicer.append(int(idx))
+        try:
+            series = data[tuple(slicer)]
+        except Exception:
+            self._timecourse_plot.set_message("Timecourse unavailable.")
+            return
+        try:
+            y = np.asarray(series).astype(float)
+        except Exception:
+            self._timecourse_plot.set_message("Timecourse unavailable.")
+            return
+        if y.ndim != 1:
+            y = y.reshape(-1)
+        x = list(range(len(y)))
+        meta = PlotMeta(title="Voxel timecourse", x_label="Frame", y_label="") if PlotMeta else None
+        self._timecourse_plot.set_lines(
+            x=x,
+            ys=[y],
+            meta=meta,
+            y_fmt=lambda v: f"{v:.1E}",
+        )
+        self._timecourse_plot.set_vline(float(self.state.viewer.frame_index))
 
     def on_viewer_subject_reset(self) -> None:
         self._apply_subject_defaults_from_reco()
@@ -1115,7 +1595,12 @@ class ViewerController:
             else:
                 self._hook_args_by_name[self._viewer_hook_name] = dict(hook_args)
         if self._view is not None:
-            self._view.set_viewer_hook_state(self._viewer_hook_name or "None", self._viewer_hook_enabled, self._viewer_hook_args)
+            self._view.set_viewer_hook_state(
+                self._viewer_hook_name or "None",
+                self._viewer_hook_enabled,
+                self._viewer_hook_args,
+                allow_toggle=not self._viewer_hook_locked,
+            )
             convert_enabled = self._convert_hook_enabled and bool(self._viewer_hook_name)
             self._view.set_convert_hook_state(self._viewer_hook_name or "None", convert_enabled, self._viewer_hook_args)
         if self._viewer_hook_enabled:
@@ -1130,7 +1615,12 @@ class ViewerController:
         if self._viewer_hook_name == name:
             self._viewer_hook_args = self._hook_args_by_name.get(name)
             if self._view is not None:
-                self._view.set_viewer_hook_state(self._viewer_hook_name or "None", self._viewer_hook_enabled, self._viewer_hook_args)
+                self._view.set_viewer_hook_state(
+                    self._viewer_hook_name or "None",
+                    self._viewer_hook_enabled,
+                    self._viewer_hook_args,
+                    allow_toggle=not self._viewer_hook_locked,
+                )
         convert_enabled = self._convert_hook_enabled and bool(self._viewer_hook_name)
         if self._view is not None:
             self._view.set_convert_hook_state(self._viewer_hook_name or "None", convert_enabled, self._hook_args_by_name.get(name))
@@ -1146,6 +1636,17 @@ class ViewerController:
         convert_enabled = self._convert_hook_enabled and bool(self._viewer_hook_name)
         if self._view is not None:
             self._view.set_convert_hook_state(self._viewer_hook_name or "None", convert_enabled, self._hook_args_by_name.get(name))
+
+    def on_viewer_hook_lock(self, locked: bool) -> None:
+        self._viewer_hook_locked = bool(locked)
+        self.state.viewer.hook_locked = bool(locked)
+        if self._view is not None:
+            self._view.set_viewer_hook_state(
+                self._viewer_hook_name or "None",
+                self._viewer_hook_enabled,
+                self._viewer_hook_args,
+                allow_toggle=not self._viewer_hook_locked,
+            )
 
     def _apply_subject_defaults_from_reco(self) -> None:
         sid = self.state.dataset.selected_scan_id
@@ -1555,6 +2056,63 @@ def _affine_to_resolution(affine: np.ndarray) -> tuple[float, float, float]:
     while len(out) < 3:
         out.append(1.0)
     return (out[0], out[1], out[2])
+
+
+def _center_window(win, parent) -> None:
+    try:
+        win.update_idletasks()
+    except Exception:
+        return
+    try:
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+    except Exception:
+        return
+    try:
+        ww = win.winfo_reqwidth()
+        wh = win.winfo_reqheight()
+    except Exception:
+        return
+    x = px + max(int((pw - ww) / 2), 0)
+    y = py + max(int((ph - wh) / 2), 0)
+    try:
+        win.geometry(f"+{x}+{y}")
+    except Exception:
+        pass
+
+
+def _resolve_value_display(
+    *,
+    vol: np.ndarray,
+    indices: tuple[int, int, int],
+    frame: int,
+    extra_indices: list[int] | None,
+    rgb_mode: bool,
+) -> tuple[str, bool]:
+    plot_enabled = bool(vol.ndim >= 4)
+    xi, yi, zi = indices
+    if vol.ndim < 3:
+        return ("[ - ]", plot_enabled)
+    try:
+        if vol.ndim == 4 and vol.shape[3] == 3 and rgb_mode:
+            rgb = vol[xi, yi, zi, :]
+            rgb = np.asarray(rgb).reshape(-1)
+            if len(rgb) >= 3:
+                return (f"[ {rgb[0]:.3f}, {rgb[1]:.3f}, {rgb[2]:.3f} ]", plot_enabled)
+        slicer: list[slice | int] = [xi, yi, zi]
+        if vol.ndim >= 4:
+            slicer.append(min(max(int(frame), 0), int(vol.shape[3]) - 1))
+        if vol.ndim > 4:
+            extra_indices = extra_indices or []
+            for i in range(4, vol.ndim):
+                idx = extra_indices[i - 4] if (i - 4) < len(extra_indices) else 0
+                slicer.append(min(max(int(idx), 0), int(vol.shape[i]) - 1))
+        value = float(vol[tuple(slicer)])
+        return (f"[ {value:.3f} ]", plot_enabled)
+    except Exception:
+        return ("[ - ]", plot_enabled)
 
 
 def _parse_fov(value: object) -> Optional[tuple[float, float, float]]:
