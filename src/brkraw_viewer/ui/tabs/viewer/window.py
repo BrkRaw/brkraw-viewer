@@ -45,6 +45,8 @@ class ViewerTab:
         show_crosshair: bool = False,
         lock_scale: bool = True,
         allow_overflow: bool = False,
+        overflow_blend: float | None = None,
+        zoom_scale: float | None = None,
     ) -> None:
         self.right.set_views(
             views,
@@ -54,6 +56,8 @@ class ViewerTab:
             show_crosshair=show_crosshair,
             lock_scale=lock_scale,
             allow_overflow=allow_overflow,
+            overflow_blend=overflow_blend,
+            zoom_scale=zoom_scale,
         )
 
     def set_subject_enabled(self, enabled: bool) -> None:

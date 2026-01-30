@@ -14,7 +14,7 @@ from .icon_button import IconButton
 
 
 ClickCallback = Callable[[int, int], None]
-ZoomCallback = Callable[[int], None]
+ZoomCallback = Callable[[float, Optional[Tuple[int, int]]], None]
 ScrollCallback = Callable[[int], None]
 
 
@@ -175,6 +175,12 @@ class ViewportCanvas(ttk.Frame):
         self._boxes: List[int] = []
         self._marker_data: List[Tuple[int, int, str]] = []
         self._box_data: List[Tuple[int, int, int, int, str, int]] = []
+        self._pan_offset = (0.0, 0.0)
+        self._last_cursor: Optional[Tuple[int, int]] = None
+        self._focus_rc: Optional[Tuple[int, int]] = None
+        self._use_cursor_focus = False
+        self._zoom_scale = 1.0
+        self._zoom_changed = False
 
         # last render state: (img_h, img_w, offset_x, offset_y, target_w, target_h)
         self._render_state: Optional[Tuple[int, int, int, int, int, int]] = None
@@ -200,6 +206,7 @@ class ViewportCanvas(ttk.Frame):
         self._canvas.bind("<Shift-MouseWheel>", self._on_zoom_wheel)
         self._canvas.bind("<Shift-Button-4>", self._on_zoom_wheel)
         self._canvas.bind("<Shift-Button-5>", self._on_zoom_wheel)
+        self._canvas.bind("<Motion>", self._on_motion)
 
         # capture button (bottom-right)
         self._capture_icon = load_icon("viewport-capture.png", size=(12, 12), invert=True)
@@ -493,6 +500,8 @@ class ViewportCanvas(ttk.Frame):
         res: Tuple[float, float] = (1.0, 1.0),
         overlay: Optional[OverlaySpec] = None,
         crosshair: Optional[Tuple[int, int]] = None,
+        focus_rc: Optional[Tuple[int, int]] = None,
+        use_cursor_focus: bool = False,
         show_crosshair: bool = False,
         show_colorbar: bool = False,
         colorbar_ticks: Optional[List[Tuple[float, str]]] = None,  # normalized 0..1 ticks
@@ -500,17 +509,29 @@ class ViewportCanvas(ttk.Frame):
         allow_upsample: bool = True,
         mm_per_px: Optional[float] = None,
         allow_overflow: bool = False,
+        zoom_scale: Optional[float] = None,
     ) -> None:
         self._last_base = np.asarray(base)
         self._last_title = str(title)
         self._last_res = (float(res[0]), float(res[1]))
         self._last_overlay = overlay
         self._crosshair_rc = crosshair
+        self._focus_rc = focus_rc
+        self._use_cursor_focus = bool(use_cursor_focus)
         self._show_crosshair = bool(show_crosshair)
         self._show_colorbar = bool(show_colorbar)
         self._allow_upsample = bool(allow_upsample)
         self._lock_mm_per_px = None if mm_per_px is None else float(mm_per_px)
         self._allow_overflow = bool(allow_overflow)
+        prev_zoom = self._zoom_scale
+        if zoom_scale is None:
+            self._zoom_scale = 1.0
+        else:
+            try:
+                self._zoom_scale = max(float(zoom_scale), 0.01)
+            except Exception:
+                self._zoom_scale = 1.0
+        self._zoom_changed = abs(self._zoom_scale - prev_zoom) > 1e-6
 
         if show_colorbar and overlay is not None:
             self._right.grid()
@@ -613,10 +634,16 @@ class ViewportCanvas(ttk.Frame):
         r, c = rc
         self._click_cb(int(r), int(c))
 
+    def _on_motion(self, event: tk.Event) -> None:
+        try:
+            self._last_cursor = (int(event.x), int(event.y))
+        except Exception:
+            pass
+
     def _on_mousewheel(self, event: tk.Event) -> Optional[str]:
         direction = 0
         delta = getattr(event, "delta", 0)
-        if isinstance(delta, int) and delta != 0:
+        if isinstance(delta, (int, float)) and delta != 0:
             direction = 1 if delta > 0 else -1
         else:
             num = getattr(event, "num", None)
@@ -631,7 +658,14 @@ class ViewportCanvas(ttk.Frame):
         shift_down = bool(state & 0x0001)
         if shift_down and self._zoom_cb is not None:
             try:
-                self._zoom_cb(direction)
+                if isinstance(delta, (int, float)) and delta != 0:
+                    zoom_delta = float(delta)
+                    if abs(zoom_delta) < 4.0:
+                        zoom_delta *= 120.0
+                else:
+                    zoom_delta = float(direction) * 120.0
+                rc = self.canvas_to_image(int(event.x), int(event.y))
+                self._zoom_cb(zoom_delta, rc)
             except Exception:
                 pass
             return "break"
@@ -648,7 +682,7 @@ class ViewportCanvas(ttk.Frame):
             return None
         direction = 0
         delta = getattr(event, "delta", 0)
-        if isinstance(delta, int) and delta != 0:
+        if isinstance(delta, (int, float)) and delta != 0:
             direction = 1 if delta > 0 else -1
         else:
             num = getattr(event, "num", None)
@@ -659,7 +693,14 @@ class ViewportCanvas(ttk.Frame):
         if direction == 0:
             return None
         try:
-            self._zoom_cb(direction)
+            if isinstance(delta, (int, float)) and delta != 0:
+                zoom_delta = float(delta)
+                if abs(zoom_delta) < 4.0:
+                    zoom_delta *= 120.0
+            else:
+                zoom_delta = float(direction) * 120.0
+            rc = self.canvas_to_image(int(event.x), int(event.y))
+            self._zoom_cb(zoom_delta, rc)
         except Exception:
             pass
         return "break"
@@ -680,6 +721,7 @@ class ViewportCanvas(ttk.Frame):
                 pass
             self._resize_job = None
 
+        prev_state = self._render_state
         # During live resize (especially on macOS), the canvas can report transient 1px sizes.
         # If we clear/redraw in that moment, the image can appear to disappear and not recover.
         cw = int(self._canvas.winfo_width())
@@ -725,11 +767,7 @@ class ViewportCanvas(ttk.Frame):
         height_mm = float(base.shape[0]) * res_row if base.ndim >= 2 else float(pil_img.height)
         lock_mm_per_px = self._lock_mm_per_px
         if lock_mm_per_px is not None and width_mm > 0 and height_mm > 0:
-            min_mm_per_px = max(width_mm / max(cw, 1), height_mm / max(ch, 1))
-            if self._allow_overflow:
-                mm_per_px = min(float(lock_mm_per_px), float(min_mm_per_px))
-            else:
-                mm_per_px = max(float(lock_mm_per_px), float(min_mm_per_px))
+            mm_per_px = max(float(lock_mm_per_px), 1e-6)
             tw = max(int(round(width_mm / mm_per_px)), 1)
             th = max(int(round(height_mm / mm_per_px)), 1)
         else:
@@ -753,13 +791,45 @@ class ViewportCanvas(ttk.Frame):
             tw = max(int(tw), 1)
             th = max(int(th), 1)
 
+        base_ox = (cw - tw) // 2
+        base_oy = (ch - th) // 2
+
+        # Keep the focus point (cursor or crosshair) anchored while zooming.
+        pan_x, pan_y = self._pan_offset
+        if self._zoom_scale <= 1.0:
+            pan_x, pan_y = (0.0, 0.0)
+        elif self._zoom_changed and prev_state is not None:
+            prev_h, prev_w, prev_ox, prev_oy, prev_tw, prev_th = prev_state
+            if prev_tw > 0 and prev_th > 0:
+                target = None
+                if self._use_cursor_focus and self._last_cursor is not None:
+                    cx, cy = self._last_cursor
+                    u = (float(cx) - float(prev_ox)) / float(prev_tw)
+                    v = (float(cy) - float(prev_oy)) / float(prev_th)
+                    if 0.0 <= u <= 1.0 and 0.0 <= v <= 1.0:
+                        target = (float(cx), float(cy), u, v)
+                if target is None and self._focus_rc is not None and prev_w > 0 and prev_h > 0:
+                    fr, fc = self._focus_rc
+                    u = (float(fc) + 0.5) / float(prev_w)
+                    v = (float(prev_h - 1 - int(fr)) + 0.5) / float(prev_h)
+                    target_x = float(prev_ox) + u * float(prev_tw)
+                    target_y = float(prev_oy) + v * float(prev_th)
+                    target = (target_x, target_y, u, v)
+                if target is not None:
+                    tx, ty, u, v = target
+                    pan_x = float(tx) - float(base_ox) - (u * float(tw))
+                    pan_y = float(ty) - float(base_oy) - (v * float(th))
+        self._pan_offset = (pan_x, pan_y)
+
         resampling = getattr(Image, "Resampling", Image)
         resample = getattr(resampling, "NEAREST")
         pil_img = pil_img.resize((tw, th), resample)
 
         self._tk_img = ImageTk.PhotoImage(pil_img)
-        ox = (cw - tw) // 2
-        oy = (ch - th) // 2
+        ox = base_ox
+        oy = base_oy
+        ox = int(round(float(ox) + self._pan_offset[0]))
+        oy = int(round(float(oy) + self._pan_offset[1]))
         self._render_state = (int(base.shape[0]), int(base.shape[1]), int(ox), int(oy), int(tw), int(th))
 
         self._img_id = self._canvas.create_image(ox, oy, anchor="nw", image=self._tk_img)
@@ -775,6 +845,8 @@ class ViewportCanvas(ttk.Frame):
 
         if self._show_crosshair and self._crosshair_rc is not None:
             self._draw_crosshair(self._crosshair_rc[0], self._crosshair_rc[1])
+
+        self._zoom_changed = False
 
         # redraw marker/box overlays from stored data
         for r, c, color in self._marker_data:

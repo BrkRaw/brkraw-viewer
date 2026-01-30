@@ -7,10 +7,9 @@ from pathlib import Path
 from typing import Optional, Union, Sequence, cast
 
 from .helper import (
-    crop_view as _crop_view, 
-    flatten_keys as _flatten_keys, 
-    filter_layout_keys as _filter_layout_keys, 
-    format_study_date as _format_study_date, 
+    flatten_keys as _flatten_keys,
+    filter_layout_keys as _filter_layout_keys,
+    format_study_date as _format_study_date,
     lookup_nested as _lookup_nested,
     format_value as _format_value,
 )
@@ -451,10 +450,6 @@ class ViewerController:
             img_xy = data[:, :, zi].T               # (y, x)
             img_xz = data[:, yi, :].T               # (z, x)
         zoom = max(1.0, float(self.state.viewer.zoom))
-        if zoom > 1.0:
-            img_xy = _crop_view(img_xy, center=(yi, xi), zoom=zoom)
-            img_xz = _crop_view(img_xz, center=(zi, xi), zoom=zoom)
-            img_zy = _crop_view(img_zy, center=(yi, zi), zoom=zoom)
         views = {
             "xy": img_xy,
             "xz": img_xz,
@@ -475,6 +470,24 @@ class ViewerController:
             "xz": (zi, xi),
             "zy": (yi, zi),
         }
+        # Blend fit->fill by zoom while damping overflow for highly anisotropic volumes.
+        overflow_blend = 0.0
+        if zoom > 1.0:
+            try:
+                axis_mm = (
+                    float(x) * float(res_x),
+                    float(y) * float(res_y),
+                    float(z) * float(res_z),
+                )
+                max_axis = max(axis_mm)
+                min_axis = min(axis_mm)
+                ratio_scale = 0.0
+                if max_axis > 0:
+                    ratio_scale = max(0.0, min(1.0, (min_axis / max_axis) / 0.5))
+                base_blend = max(0.0, min((zoom - 1.0) / 3.0, 1.0))
+                overflow_blend = base_blend * ratio_scale
+            except Exception:
+                overflow_blend = 0.0
         self._view.set_viewer_views(
             views,
             indices=(xi, yi, zi),
@@ -482,7 +495,9 @@ class ViewerController:
             crosshair=crosshair,
             show_crosshair=self.state.viewer.show_crosshair,
             lock_scale=True,
-            allow_overflow=(zoom > 1.0),
+            allow_overflow=overflow_blend > 0.0,
+            overflow_blend=overflow_blend if overflow_blend > 0.0 else None,
+            zoom_scale=zoom,
         )
         value_text, plot_enabled = _resolve_value_display(
             vol=np.asarray(self._viewer_volume),
@@ -1385,13 +1400,31 @@ class ViewerController:
             self._view.set_viewer_zoom_value(self.state.viewer.zoom)
         self._render_viewer_views()
 
-    def on_viewer_zoom_step(self, direction: int) -> None:
+    def on_viewer_zoom_step(self, delta: float, plane: Optional[str] = None, rc: Optional[tuple[int, int]] = None) -> None:
         try:
-            step = 0.25
             current = float(self.state.viewer.zoom)
-            new_zoom = current + (step if int(direction) > 0 else -step)
+            steps = float(delta) / 120.0
+            if steps == 0.0:
+                return
+            factor = 1.2 ** steps
+            new_zoom = current * factor
         except Exception:
             new_zoom = 1.0
+        if plane and rc is not None:
+            row, col = rc
+            try:
+                # Move crosshair to the hovered voxel in the active plane.
+                if plane == "xy":
+                    self.state.viewer.y_index = int(row)
+                    self.state.viewer.x_index = int(col)
+                elif plane == "xz":
+                    self.state.viewer.z_index = int(row)
+                    self.state.viewer.x_index = int(col)
+                elif plane == "zy":
+                    self.state.viewer.y_index = int(row)
+                    self.state.viewer.z_index = int(col)
+            except Exception:
+                pass
         new_zoom = max(1.0, min(4.0, float(new_zoom)))
         self.state.viewer.zoom = new_zoom
         if self._view is not None:

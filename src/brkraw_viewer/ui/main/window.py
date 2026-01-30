@@ -314,6 +314,8 @@ class MainWindow(ttk.Frame):
         show_crosshair: bool = False,
         lock_scale: bool = True,
         allow_overflow: bool = False,
+        overflow_blend: float | None = None,
+        zoom_scale: float | None = None,
     ) -> None:
         tab = self.tabs.get_tab("Viewer")
         target = getattr(tab, "_tab_instance", None)
@@ -326,6 +328,8 @@ class MainWindow(ttk.Frame):
                 show_crosshair=show_crosshair,
                 lock_scale=lock_scale,
                 allow_overflow=allow_overflow,
+                overflow_blend=overflow_blend,
+                zoom_scale=zoom_scale,
             )
 
     def set_viewer_subject_enabled(self, enabled: bool) -> None:
