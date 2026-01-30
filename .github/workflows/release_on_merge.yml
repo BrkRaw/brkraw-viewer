@@ -3,6 +3,19 @@ name: Release On Merge
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create and push (e.g., v0.4.2)"
+        required: true
+      run_release:
+        description: "Trigger release workflow after tagging"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 permissions:
   contents: write
@@ -18,6 +31,7 @@ jobs:
           fetch-depth: 0
       - name: Detect version change
         id: version
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -29,11 +43,12 @@ jobs:
           # Default outputs
           echo "changed=false" >> "$GITHUB_OUTPUT"
 
-          # Prefer merge commits, but allow squash/rebase merges by looking up PR via SHA.
+          # Only proceed for merge commits ("Merge pull request ...").
           # Read commit message from git to avoid workflow expression escaping issues.
           merge_msg=$(git log -1 --pretty=%B "${SHA}" || true)
           if [[ "${merge_msg}" != Merge\ pull\ request* ]]; then
-            echo "Not a merge commit message; will attempt PR lookup by SHA."
+            echo "Not a merge commit. Skipping."
+            exit 0
           fi
 
           # Find the PR associated with this merge commit and ensure it has the 'release' label.
@@ -45,43 +60,7 @@ jobs:
             "$api" || true)
           export PR_JSON="$pr_json"
 
-          pr_number=$(python3 - <<'PY'
-          import json, os
-          s = os.environ.get('PR_JSON','')
-          if not s.strip():
-            print('')
-            raise SystemExit(0)
-          data = json.loads(s)
-          if isinstance(data, list) and data:
-            print(data[0].get('number',''))
-          else:
-            print('')
-          PY
-          )
-
-          if [[ -z "${pr_number}" ]]; then
-            # Fallback: search PRs by commit SHA (works for squash/rebase merges too).
-            search_api="https://api.github.com/search/issues?q=repo:${REPO}+is:pr+sha:${SHA}"
-            search_json=$(curl -fsSL \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "$search_api" || true)
-            export SEARCH_JSON="$search_json"
-            pr_number=$(python3 - <<'PY'
-            import json, os
-            s = os.environ.get('SEARCH_JSON','')
-            if not s.strip():
-                print('')
-                raise SystemExit(0)
-            data = json.loads(s)
-            items = data.get('items', [])
-            if items:
-                print(items[0].get('number',''))
-            else:
-                print('')
-            PY
-            )
-          fi
+          pr_number=$(python3 -c "import json, os; s=os.environ.get('PR_JSON','').strip(); data=json.loads(s) if s else []; print(data[0].get('number','') if isinstance(data, list) and data else '')")
 
           if [[ -z "${pr_number}" ]]; then
             echo "No PR associated with ${SHA}. Skipping."
@@ -95,13 +74,7 @@ jobs:
             "$labels_api")
           export LABELS_JSON="$labels_json"
 
-          has_release=$(python3 - <<'PY'
-          import json, os
-          labels = json.loads(os.environ['LABELS_JSON'])
-          names = {l.get('name','') for l in labels if isinstance(l, dict)}
-          print('true' if 'release' in names else 'false')
-          PY
-          )
+          has_release=$(python3 -c "import json, os; labels=json.loads(os.environ.get('LABELS_JSON','[]')); names={l.get('name','') for l in labels if isinstance(l, dict)}; print('true' if 'release' in names else 'false')")
 
           if [[ "${has_release}" != "true" ]]; then
             echo "PR #${pr_number} does not have 'release' label. Skipping."
@@ -114,25 +87,27 @@ jobs:
             exit 0
           fi
 
-          version=$(python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          text = Path("pyproject.toml").read_text(encoding="utf-8")
-          match = re.search(r"^version\s*=\s*[\"']([^\"']+)[\"']", text, flags=re.MULTILINE)
-          if not match:
-              raise SystemExit("No version found in pyproject.toml")
-          print(match.group(1))
-          PY
-          )
+          version=$(python3 -c "import re; from pathlib import Path; text=Path('pyproject.toml').read_text(encoding='utf-8'); m=re.search(r'^version\\s*=\\s*[\\\"\\\']([^\\\"\\\']+)[\\\"\\\']', text, flags=re.MULTILINE); print(m.group(1) if m else '')")
+          if [[ -z "${version}" ]]; then
+            echo "No version found in pyproject.toml" >&2
+            exit 1
+          fi
 
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "value=$version" >> "$GITHUB_OUTPUT"
         shell: bash
-      - name: Create and push tag
-        if: ${{ steps.version.outputs.changed == 'true' }}
+      - name: Manual tag inputs
+        id: manual
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
-          tag="${{ steps.version.outputs.value }}"
+          set -euo pipefail
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          echo "run_release=${{ inputs.run_release }}" >> "$GITHUB_OUTPUT"
+      - name: Create and push tag
+        if: ${{ steps.version.outputs.changed == 'true' || steps.manual.outputs.changed == 'true' }}
+        run: |
+          tag="${{ steps.version.outputs.value || steps.manual.outputs.value }}"
           if git rev-parse "$tag" >/dev/null 2>&1; then
             echo "Tag $tag already exists. Skipping."
             exit 0
@@ -140,9 +115,9 @@ jobs:
           git tag "$tag" "${{ github.sha }}"
           git push origin "$tag"
       - name: Trigger release workflow
-        if: ${{ steps.version.outputs.changed == 'true' }}
+        if: ${{ (steps.version.outputs.changed == 'true') || (steps.manual.outputs.changed == 'true' && steps.manual.outputs.run_release == 'true') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${{ steps.version.outputs.value }}"
+          tag="${{ steps.version.outputs.value || steps.manual.outputs.value }}"
           gh workflow run release.yml -f tag="$tag"
