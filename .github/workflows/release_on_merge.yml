@@ -30,7 +30,9 @@ jobs:
           echo "changed=false" >> "$GITHUB_OUTPUT"
 
           # Prefer merge commits, but allow squash/rebase merges by looking up PR via SHA.
-          if [[ "${{ github.event.head_commit.message }}" != Merge\ pull\ request* ]]; then
+          # Read commit message from git to avoid workflow expression escaping issues.
+          merge_msg=$(git log -1 --pretty=%B "${SHA}" || true)
+          if [[ "${merge_msg}" != Merge\ pull\ request* ]]; then
             echo "Not a merge commit message; will attempt PR lookup by SHA."
           fi
 
