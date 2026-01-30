@@ -294,8 +294,8 @@ class HookOptionsDialog:
         container = self._container
         if container is None:
             return
-        for widget in container.winfo_children():
-            widget.destroy()
+        for child in container.winfo_children():
+            child.destroy()
         self._choices = {}
 
         ttk.Label(container, text="Key").grid(row=0, column=0, sticky="w")

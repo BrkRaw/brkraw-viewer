@@ -1,8 +1,9 @@
-# Release v0.4.0
+# Release v0.4.1
 
 Date: 2026-01-29
-Changes since 0.3.2
+Changes since 0.4.0
 
-- chore: prepare release v0.4.0 (0b3fd75)
-- docs: update contributors (4c532b0)
-- Improve viewer timecourse, caching, and UI (dc90eb3)
+- chore: prepare release v0.4.1 (b709bc0)
+- Refine viewer zoom scaling (8e84e6f)
+- feat: refine viewer input and hooks (bc3fc86)
+- ci: stabilize release-on-merge PR lookup (a4cfe81)

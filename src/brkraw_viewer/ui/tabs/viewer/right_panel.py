@@ -77,6 +77,13 @@ class ViewerRightPanel(ttk.Frame):
         self._xz.set_click_callback(lambda r, c: self._on_view_click("xz", r, c))
         self._xy.set_click_callback(lambda r, c: self._on_view_click("xy", r, c))
         self._zy.set_click_callback(lambda r, c: self._on_view_click("zy", r, c))
+        self._xz.set_scroll_callback(lambda d: self._on_view_scroll("xz", d))
+        self._xy.set_scroll_callback(lambda d: self._on_view_scroll("xy", d))
+        self._zy.set_scroll_callback(lambda d: self._on_view_scroll("zy", d))
+        self._last_zoom_source: Optional[str] = None
+        self._xz.set_zoom_callback(lambda delta, rc: self._on_view_zoom("xz", delta, rc))
+        self._xy.set_zoom_callback(lambda delta, rc: self._on_view_zoom("xy", delta, rc))
+        self._zy.set_zoom_callback(lambda delta, rc: self._on_view_zoom("zy", delta, rc))
         self._xz.set_capture_callback(lambda: self._on_view_capture("xz", self._xz))
         self._xy.set_capture_callback(lambda: self._on_view_capture("xy", self._xy))
         self._zy.set_capture_callback(lambda: self._on_view_capture("zy", self._zy))
@@ -214,6 +221,40 @@ class ViewerRightPanel(ttk.Frame):
             yi, zi = int(row), int(col)
         handler(xi, yi, zi)
 
+    def _on_view_scroll(self, plane: str, direction: int) -> None:
+        if self._suspend_callbacks:
+            return
+        axis = None
+        var = None
+        scale = None
+        if plane == "xy":
+            axis, var, scale = "z", self._z_var, self._z_scale
+        elif plane == "xz":
+            axis, var, scale = "y", self._y_var, self._y_scale
+        elif plane == "zy":
+            axis, var, scale = "x", self._x_var, self._x_scale
+        if axis is None or var is None or scale is None:
+            return
+        try:
+            max_val = int(scale.cget("to"))
+        except Exception:
+            max_val = 0
+        cur = int(var.get())
+        step = 1 if int(direction) > 0 else -1
+        nxt = max(0, min(max_val, cur + step))
+        if nxt == cur:
+            return
+        var.set(nxt)
+        handler = getattr(self._callbacks, "on_viewer_axis_change", None)
+        if callable(handler):
+            handler(axis, int(nxt))
+
+    def _on_view_zoom(self, plane: str, delta: float, rc: Optional[tuple[int, int]]) -> None:
+        self._last_zoom_source = str(plane)
+        handler = getattr(self._callbacks, "on_viewer_zoom_step", None)
+        if callable(handler):
+            handler(float(delta), str(plane), rc)
+
     def set_ranges(self, *, x: int, y: int, z: int, frames: int, slicepacks: int) -> None:
         self._x_scale.configure(to=max(x - 1, 0))
         self._y_scale.configure(to=max(y - 1, 0))
@@ -299,6 +340,10 @@ class ViewerRightPanel(ttk.Frame):
         res: Optional[dict[str, tuple[float, float]]] = None,
         crosshair: Optional[dict] = None,
         show_crosshair: bool = False,
+        lock_scale: bool = True,
+        allow_overflow: bool = False,
+        overflow_blend: float | None = None,
+        zoom_scale: float | None = None,
     ) -> None:
         self._last_indices = indices
         if not views:
@@ -308,15 +353,30 @@ class ViewerRightPanel(ttk.Frame):
             return
         crosshair = crosshair or {}
         res = res or {}
-        lock_mm_per_px = self._compute_shared_mm_per_px(views, res)
+        # Shared scale ensures planes stay consistent; blend fit/fill and apply zoom.
+        lock_mm_per_px = (
+            self._compute_shared_mm_per_px(
+                views,
+                res,
+                fill=allow_overflow,
+                overflow_blend=overflow_blend,
+                zoom_scale=zoom_scale,
+            )
+            if lock_scale
+            else None
+        )
         if "xz" in views:
             self._xz.set_view(
                 base=views["xz"],
                 title=f"X-Z (y={indices[1] if indices else 0})",
                 res=res.get("xz", (1.0, 1.0)),
                 crosshair=crosshair.get("xz"),
+                focus_rc=crosshair.get("xz"),
+                use_cursor_focus=self._last_zoom_source == "xz",
                 show_crosshair=show_crosshair,
                 mm_per_px=lock_mm_per_px,
+                allow_overflow=allow_overflow,
+                zoom_scale=zoom_scale,
             )
         if "xy" in views:
             self._xy.set_view(
@@ -324,8 +384,12 @@ class ViewerRightPanel(ttk.Frame):
                 title=f"X-Y (z={indices[2] if indices else 0})",
                 res=res.get("xy", (1.0, 1.0)),
                 crosshair=crosshair.get("xy"),
+                focus_rc=crosshair.get("xy"),
+                use_cursor_focus=self._last_zoom_source == "xy",
                 show_crosshair=show_crosshair,
                 mm_per_px=lock_mm_per_px,
+                allow_overflow=allow_overflow,
+                zoom_scale=zoom_scale,
             )
         if "zy" in views:
             self._zy.set_view(
@@ -333,9 +397,14 @@ class ViewerRightPanel(ttk.Frame):
                 title=f"Z-Y (x={indices[0] if indices else 0})",
                 res=res.get("zy", (1.0, 1.0)),
                 crosshair=crosshair.get("zy"),
+                focus_rc=crosshair.get("zy"),
+                use_cursor_focus=self._last_zoom_source == "zy",
                 show_crosshair=show_crosshair,
                 mm_per_px=lock_mm_per_px,
+                allow_overflow=allow_overflow,
+                zoom_scale=zoom_scale,
             )
+        self._last_zoom_source = None
 
     def set_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
         self._value_var.set(value_text)
@@ -349,6 +418,10 @@ class ViewerRightPanel(ttk.Frame):
         self,
         views: dict,
         res: dict[str, tuple[float, float]],
+        *,
+        fill: bool = False,
+        overflow_blend: float | None = None,
+        zoom_scale: float | None = None,
     ) -> Optional[float]:
         candidates: list[float] = []
         for plane, viewport in (("xz", self._xz), ("xy", self._xy), ("zy", self._zy)):
@@ -371,9 +444,33 @@ class ViewerRightPanel(ttk.Frame):
             cw, ch = viewport.get_canvas_size()
             if cw < 8 or ch < 8:
                 continue
-            candidates.append(max(width_mm / float(cw), height_mm / float(ch)))
+            fit_mm = max(width_mm / float(cw), height_mm / float(ch))
+            fill_mm = min(width_mm / float(cw), height_mm / float(ch))
+            if overflow_blend is not None:
+                blend = max(0.0, min(float(overflow_blend), 1.0))
+                target_mm = fit_mm - (fit_mm - fill_mm) * blend
+            elif fill:
+                target_mm = fill_mm
+            else:
+                target_mm = fit_mm
+            if zoom_scale is not None:
+                try:
+                    zs = float(zoom_scale)
+                    if zs > 0:
+                        target_mm = target_mm / zs
+                except Exception:
+                    pass
+            candidates.append(target_mm)
         if not candidates:
             return None
+        if overflow_blend is not None:
+            return max(candidates)
+        if fill:
+            # Use the narrow-side fit as the fill target, with a small buffer.
+            min_mm = min(candidates)
+            max_mm = max(candidates)
+            relaxed = min_mm * 1.05
+            return min(relaxed, max_mm)
         return max(candidates)
 
     def _on_timecourse(self, callbacks) -> None:

@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import sys
 
-from brkraw_viewer.apps.viewer import ViewerApp
+import tkinter as tk
+
+from brkraw_viewer.app.controller import ViewerController
+from brkraw_viewer.ui.main import MainWindow
 
 
 def main() -> int:
-    app = ViewerApp(path=None, scan_id=None, reco_id=None, info_spec=None)
+    root = tk.Tk()
+    controller = ViewerController()
+    MainWindow(root, controller)
     try:
-        app.update_idletasks()
-        app.update()
+        root.update_idletasks()
+        root.update()
     finally:
-        app.destroy()
+        root.destroy()
     print("Addon smoke test: OK")
     return 0
 
