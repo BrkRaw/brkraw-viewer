@@ -94,7 +94,7 @@ class ViewerTopPanel(ttk.Frame):
         hook_frame.grid(row=0, column=0, sticky="nsew")
         hook_frame.columnconfigure(1, weight=1)
 
-        self._hook_name_var = tk.StringVar(value="")
+        self._hook_name_var = tk.StringVar(value="Disabled")
         self._hook_enabled_var = tk.BooleanVar(value=False)
         self._hook_args: dict | None = None
 
@@ -103,6 +103,7 @@ class ViewerTopPanel(ttk.Frame):
             text="Apply",
             variable=self._hook_enabled_var,
             command=lambda: self._on_hook_toggle(callbacks),
+            state="disabled",
         )
         self._hook_check.grid(row=0, column=0, sticky="w", padx=(0, 6))
         name_entry = ttk.Entry(hook_frame, textvariable=self._hook_name_var, width=14, state="readonly")
@@ -111,6 +112,7 @@ class ViewerTopPanel(ttk.Frame):
             hook_frame,
             text="Hook Options",
             command=lambda: self._open_hook_options(callbacks),
+            state="disabled",
         )
         self._hook_options_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
@@ -264,9 +266,16 @@ class ViewerTopPanel(ttk.Frame):
             self._pose_secondary_var.set(pose_secondary)
 
     def set_hook_state(self, hook_name: str, enabled: bool, *, allow_toggle: bool = True) -> None:
-        self._hook_name_var.set(hook_name or "None")
-        self._hook_enabled_var.set(bool(enabled))
-        state = "normal" if allow_toggle and hook_name and hook_name != "None" else "disabled"
+        has_hook = bool(hook_name and hook_name != "None")
+        display_name = hook_name if has_hook else "Disabled"
+        self._hook_name_var.set(display_name)
+        
+        if not has_hook:
+            self._hook_enabled_var.set(False)
+        else:
+            self._hook_enabled_var.set(bool(enabled))
+
+        state = "normal" if allow_toggle and has_hook else "disabled"
         try:
             self._hook_check.configure(state=state)
         except Exception:
