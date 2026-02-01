@@ -55,6 +55,7 @@ class ViewerTopPanel(ttk.Frame):
             textvariable=self._subject_type_var,
             state="readonly",
             values=("Biped", "Quadruped", "Phantom", "Other", "OtherAnimal"),
+            width=8,
         )
         self._subject_type_combo.grid(row=1, column=1, sticky="ew", padx=(0, 4))
         self._subject_type_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
@@ -62,7 +63,7 @@ class ViewerTopPanel(ttk.Frame):
         ttk.Button(
             orientation_frame,
             text="RESET",
-            width=8,
+            width=6,
             command=lambda: self._on_subject_reset(callbacks),
         ).grid(row=1, column=2, sticky="ew", padx=(4, 0))
 
@@ -74,6 +75,7 @@ class ViewerTopPanel(ttk.Frame):
             textvariable=self._pose_primary_var,
             state="readonly",
             values=("Head", "Foot"),
+            width=8,
         )
         self._pose_primary_combo.grid(row=2, column=1, sticky="ew", padx=(0, 4), pady=(6, 0))
         self._pose_primary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
@@ -82,6 +84,7 @@ class ViewerTopPanel(ttk.Frame):
             textvariable=self._pose_secondary_var,
             state="readonly",
             values=("Supine", "Prone", "Left", "Right"),
+            width=8,
         )
         self._pose_secondary_combo.grid(row=2, column=2, sticky="ew", padx=(4, 0), pady=(6, 0))
         self._pose_secondary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
