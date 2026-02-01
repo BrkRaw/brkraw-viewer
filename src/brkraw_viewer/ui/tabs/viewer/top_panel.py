@@ -32,11 +32,11 @@ class ViewerTopPanel(ttk.Frame):
 
         orientation_frame = ttk.LabelFrame(left, text="Orientation", padding=(6, 4))
         orientation_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 0))
-        orientation_frame.columnconfigure(1, weight=1, uniform="viewer_left_combo")
-        orientation_frame.columnconfigure(2, weight=1, uniform="viewer_left_combo")
+        orientation_frame.columnconfigure(1, weight=1, uniform="viewer_orientation_cols")
+        orientation_frame.columnconfigure(2, weight=1, uniform="viewer_orientation_cols")
 
         space_row = ttk.Frame(orientation_frame)
-        space_row.grid(row=0, column=0, columnspan=4, pady=(0, 4), sticky="n")
+        space_row.grid(row=0, column=0, columnspan=3, pady=(0, 4), sticky="n")
         ttk.Label(space_row, text="Space").pack(side=tk.LEFT, padx=(0, 10))
         self._space_var = tk.StringVar(value="scanner")
         for label, value in (("raw", "raw"), ("scanner", "scanner"), ("subject_ras", "subject_ras")):
@@ -56,7 +56,7 @@ class ViewerTopPanel(ttk.Frame):
             state="readonly",
             values=("Biped", "Quadruped", "Phantom", "Other", "OtherAnimal"),
         )
-        self._subject_type_combo.grid(row=1, column=1, columnspan=2, sticky="ew")
+        self._subject_type_combo.grid(row=1, column=1, sticky="ew", padx=(0, 4))
         self._subject_type_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
 
         ttk.Button(
@@ -64,7 +64,7 @@ class ViewerTopPanel(ttk.Frame):
             text="RESET",
             width=8,
             command=lambda: self._on_subject_reset(callbacks),
-        ).grid(row=1, column=3, sticky="ew", padx=(12, 0))
+        ).grid(row=1, column=2, sticky="ew", padx=(4, 0))
 
         ttk.Label(orientation_frame, text="Pose").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
         self._pose_primary_var = tk.StringVar(value="Head")
@@ -75,7 +75,7 @@ class ViewerTopPanel(ttk.Frame):
             state="readonly",
             values=("Head", "Foot"),
         )
-        self._pose_primary_combo.grid(row=2, column=1, sticky="ew", pady=(6, 0))
+        self._pose_primary_combo.grid(row=2, column=1, sticky="ew", padx=(0, 4), pady=(6, 0))
         self._pose_primary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
         self._pose_secondary_combo = ttk.Combobox(
             orientation_frame,
@@ -83,11 +83,11 @@ class ViewerTopPanel(ttk.Frame):
             state="readonly",
             values=("Supine", "Prone", "Left", "Right"),
         )
-        self._pose_secondary_combo.grid(row=2, column=2, columnspan=2, sticky="ew", padx=(8, 0), pady=(6, 0))
+        self._pose_secondary_combo.grid(row=2, column=2, sticky="ew", padx=(4, 0), pady=(6, 0))
         self._pose_secondary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
 
         flip_row = ttk.Frame(orientation_frame)
-        flip_row.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        flip_row.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
         ttk.Label(flip_row, text="Flip").pack(side=tk.LEFT, padx=(0, 14))
         self._flip_x_var = tk.BooleanVar(value=False)
         self._flip_y_var = tk.BooleanVar(value=False)
@@ -189,7 +189,17 @@ class ViewerTopPanel(ttk.Frame):
             gap = 24
             mid_width = min(max_mid, max(180, width // 4))
             right_width = min(max_right, max(120, width // 6))
-            left_width = min(max_left, max(0, width - mid_width - right_width - gap))
+            
+            left_width = max(0, width - mid_width - right_width - gap)
+            left_width = min(max_left, left_width)
+            
+            try:
+                min_req = orientation_frame.winfo_reqwidth()
+                if min_req > 1:
+                    left_width = max(left_width, min_req)
+            except Exception:
+                pass
+
             left_width = max(left_width, 1)
             mid_width = max(mid_width, 1)
             right_width = max(right_width, 1)
