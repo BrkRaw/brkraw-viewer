@@ -35,13 +35,13 @@ class ViewerTopPanel(ttk.Frame):
         orientation_frame.columnconfigure(1, weight=1, uniform="viewer_orientation_cols")
         orientation_frame.columnconfigure(2, weight=1, uniform="viewer_orientation_cols")
 
-        space_row = ttk.Frame(orientation_frame)
-        space_row.grid(row=0, column=0, columnspan=3, pady=(0, 4), sticky="n")
-        ttk.Label(space_row, text="Space").pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Label(orientation_frame, text="Space").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        space_radio_frame = ttk.Frame(orientation_frame)
+        space_radio_frame.grid(row=0, column=1, columnspan=2, sticky="ew", pady=(0, 4))
         self._space_var = tk.StringVar(value="scanner")
         for label, value in (("raw", "raw"), ("scanner", "scanner"), ("subject_ras", "subject_ras")):
             ttk.Radiobutton(
-                space_row,
+                space_radio_frame,
                 text=label,
                 value=value,
                 command=lambda v=value: self._on_space(callbacks, v),
@@ -184,25 +184,27 @@ class ViewerTopPanel(ttk.Frame):
         def _resize(_event: tk.Event | None = None) -> None:
             width = max(self.winfo_width(), 1)
             max_left = 440
-            max_mid = 220
-            max_right = 160
             gap = 24
-            mid_width = min(max_mid, max(180, width // 4))
-            right_width = min(max_right, max(120, width // 6))
             
-            left_width = max(0, width - mid_width - right_width - gap)
-            left_width = min(max_left, left_width)
-            
+            # 1. Fix Orientation (Left) width
             try:
-                min_req = orientation_frame.winfo_reqwidth()
-                if min_req > 1:
-                    left_width = max(left_width, min_req)
+                req_left = orientation_frame.winfo_reqwidth()
             except Exception:
-                pass
+                req_left = 0
+            left_width = max(max_left, req_left)
+            
+            # 2. Distribute remaining space to Hook (Mid) and Control (Right)
+            remaining = max(0, width - left_width - gap)
+            
+            # Hook gets ~58% of remaining, Control gets ~42%
+            # Minimums: Hook 220, Control 160
+            mid_width = int(remaining * 0.58)
+            right_width = remaining - mid_width
+            
+            mid_width = max(mid_width, 220)
+            right_width = max(right_width, 160)
 
             left_width = max(left_width, 1)
-            mid_width = max(mid_width, 1)
-            right_width = max(right_width, 1)
             left_height = max(left.winfo_reqheight(), 1)
             mid_height = max(mid.winfo_reqheight(), 1)
             right_height = max(right.winfo_reqheight(), 1)
