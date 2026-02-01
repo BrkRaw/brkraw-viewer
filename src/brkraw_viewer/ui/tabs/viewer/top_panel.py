@@ -16,7 +16,7 @@ class ViewerTopPanel(ttk.Frame):
         self.columnconfigure(1, weight=0)
         self.columnconfigure(2, weight=1)
 
-        left_container = ttk.Frame(self, width=440)
+        left_container = ttk.Frame(self, width=300)
         left_container.grid(row=0, column=0, sticky="n", padx=(0, 8))
         left_container.grid_propagate(False)
         mid_container = ttk.Frame(self, width=220)
@@ -27,7 +27,7 @@ class ViewerTopPanel(ttk.Frame):
         right_container.grid_propagate(False)
 
         left = ttk.Frame(left_container)
-        left.place(relx=0.5, rely=0.0, anchor="n", width=440)
+        left.place(relx=0.5, rely=0.0, anchor="n", width=300)
         left.columnconfigure(0, weight=1)
 
         orientation_frame = ttk.LabelFrame(left, text="Orientation", padding=(6, 4))
@@ -183,7 +183,7 @@ class ViewerTopPanel(ttk.Frame):
 
         def _resize(_event: tk.Event | None = None) -> None:
             width = max(self.winfo_width(), 1)
-            max_left = 440
+            max_left = 300
             gap = 24
             
             # 1. Fix Orientation (Left) width
