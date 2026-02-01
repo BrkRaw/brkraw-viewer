@@ -19,3 +19,4 @@ htmlcov/
 site/
 .mkdocs-cache/
 .vscode/settings.json
+dev/
