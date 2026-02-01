@@ -28,10 +28,14 @@ class ViewerTopPanel(ttk.Frame):
 
         left = ttk.Frame(left_container)
         left.place(relx=0.5, rely=0.0, anchor="n", width=440)
-        left.columnconfigure(1, weight=1, uniform="viewer_left_combo")
-        left.columnconfigure(2, weight=1, uniform="viewer_left_combo")
+        left.columnconfigure(0, weight=1)
 
-        space_row = ttk.Frame(left)
+        orientation_frame = ttk.LabelFrame(left, text="Orientation", padding=(6, 4))
+        orientation_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 0))
+        orientation_frame.columnconfigure(1, weight=1, uniform="viewer_left_combo")
+        orientation_frame.columnconfigure(2, weight=1, uniform="viewer_left_combo")
+
+        space_row = ttk.Frame(orientation_frame)
         space_row.grid(row=0, column=0, columnspan=4, pady=(0, 4), sticky="n")
         ttk.Label(space_row, text="Space").pack(side=tk.LEFT, padx=(0, 10))
         self._space_var = tk.StringVar(value="scanner")
@@ -44,10 +48,10 @@ class ViewerTopPanel(ttk.Frame):
                 variable=self._space_var,
             ).pack(side=tk.LEFT, padx=(0, 10))
 
-        ttk.Label(left, text="Subject Type").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(orientation_frame, text="Subject Type").grid(row=1, column=0, sticky="w", padx=(0, 8))
         self._subject_type_var = tk.StringVar(value="Biped")
         self._subject_type_combo = ttk.Combobox(
-            left,
+            orientation_frame,
             textvariable=self._subject_type_var,
             state="readonly",
             values=("Biped", "Quadruped", "Phantom", "Other", "OtherAnimal"),
@@ -55,11 +59,11 @@ class ViewerTopPanel(ttk.Frame):
         self._subject_type_combo.grid(row=1, column=1, columnspan=2, sticky="ew")
         self._subject_type_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
 
-        ttk.Label(left, text="Pose").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
+        ttk.Label(orientation_frame, text="Pose").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
         self._pose_primary_var = tk.StringVar(value="Head")
         self._pose_secondary_var = tk.StringVar(value="Supine")
         self._pose_primary_combo = ttk.Combobox(
-            left,
+            orientation_frame,
             textvariable=self._pose_primary_var,
             state="readonly",
             values=("Head", "Foot"),
@@ -67,7 +71,7 @@ class ViewerTopPanel(ttk.Frame):
         self._pose_primary_combo.grid(row=2, column=1, sticky="ew", pady=(6, 0))
         self._pose_primary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
         self._pose_secondary_combo = ttk.Combobox(
-            left,
+            orientation_frame,
             textvariable=self._pose_secondary_var,
             state="readonly",
             values=("Supine", "Prone", "Left", "Right"),
@@ -76,7 +80,7 @@ class ViewerTopPanel(ttk.Frame):
         self._pose_secondary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
 
         ttk.Button(
-            left,
+            orientation_frame,
             text="RESET",
             width=8,
             command=lambda: self._on_subject_reset(callbacks),
