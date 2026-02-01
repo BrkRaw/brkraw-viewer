@@ -19,10 +19,10 @@ class ViewerTopPanel(ttk.Frame):
         left_container = ttk.Frame(self, width=440)
         left_container.grid(row=0, column=0, sticky="n", padx=(0, 8))
         left_container.grid_propagate(False)
-        mid_container = ttk.Frame(self, width=160)
+        mid_container = ttk.Frame(self, width=220)
         mid_container.grid(row=0, column=1, sticky="n", padx=(8, 8))
         mid_container.grid_propagate(False)
-        right_container = ttk.Frame(self, width=220)
+        right_container = ttk.Frame(self, width=160)
         right_container.grid(row=0, column=2, sticky="n", padx=(8, 0))
         right_container.grid_propagate(False)
 
@@ -87,25 +87,58 @@ class ViewerTopPanel(ttk.Frame):
         ).grid(row=1, column=3, rowspan=2, sticky="ns", padx=(12, 0), pady=(2, 0))
 
         mid = ttk.Frame(mid_container)
-        mid.place(relx=0.5, rely=0.0, anchor="n", width=160)
+        mid.place(relx=0.5, rely=0.0, anchor="n", width=220)
         mid.columnconfigure(0, weight=1)
+
+        hook_frame = ttk.LabelFrame(mid, text="Hook", padding=(6, 4))
+        hook_frame.grid(row=0, column=0, sticky="nsew")
+        hook_frame.columnconfigure(1, weight=1)
+
+        self._hook_name_var = tk.StringVar(value="")
+        self._hook_enabled_var = tk.BooleanVar(value=False)
+        self._hook_args: dict | None = None
+
+        self._hook_check = ttk.Checkbutton(
+            hook_frame,
+            text="Apply",
+            variable=self._hook_enabled_var,
+            command=lambda: self._on_hook_toggle(callbacks),
+        )
+        self._hook_check.grid(row=0, column=0, sticky="w", padx=(0, 6))
+        name_entry = ttk.Entry(hook_frame, textvariable=self._hook_name_var, width=14, state="readonly")
+        name_entry.grid(row=0, column=1, sticky="ew")
+        self._hook_options_button = ttk.Button(
+            hook_frame,
+            text="Hook Options",
+            command=lambda: self._open_hook_options(callbacks),
+        )
+        self._hook_options_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+
+        right = ttk.Frame(right_container)
+        right.place(relx=0.5, rely=0.0, anchor="n", width=160)
+        right.columnconfigure(0, weight=1)
+
+        control_frame = ttk.LabelFrame(right, text="Control", padding=(6, 4))
+        control_frame.grid(row=0, column=0, sticky="nsew")
+        control_frame.columnconfigure(0, weight=1)
+
         self._crosshair_var = tk.BooleanVar(value=True)
         self._rgb_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            mid,
+            control_frame,
             text="Crosshair",
             variable=self._crosshair_var,
             command=lambda: self._on_crosshair(callbacks),
-        ).grid(row=0, column=0, pady=(0, 4))
+        ).grid(row=0, column=0, sticky="w", pady=(0, 4))
         self._rgb_check = ttk.Checkbutton(
-            mid,
+            control_frame,
             text="RGB",
             variable=self._rgb_var,
             command=lambda: self._on_rgb(callbacks),
         )
-        self._rgb_check.grid(row=1, column=0, pady=(0, 4))
-        zoom_row = ttk.Frame(mid)
-        zoom_row.grid(row=2, column=0, pady=(4, 0))
+        self._rgb_check.grid(row=1, column=0, sticky="w", pady=(0, 4))
+        zoom_row = ttk.Frame(control_frame)
+        zoom_row.grid(row=2, column=0, pady=(4, 0), sticky="ew")
         ttk.Label(zoom_row, text="Zoom").pack(side=tk.LEFT, padx=(0, 4))
         self._zoom_scale = tk.Scale(
             zoom_row,
@@ -115,48 +148,21 @@ class ViewerTopPanel(ttk.Frame):
             digits=2,
             orient=tk.HORIZONTAL,
             showvalue=True,
-            length=110,
+            length=80,
             command=self._on_zoom,
         )
         self._zoom_scale.set(1.0)
-        self._zoom_scale.pack(side=tk.LEFT)
-
-        right = ttk.Frame(right_container)
-        right.place(relx=0.5, rely=0.0, anchor="n", width=220)
-        right.columnconfigure(0, weight=1)
-        hook_box = ttk.Frame(right)
-        hook_box.grid(row=0, column=0, pady=(0, 4), sticky="ew")
-        hook_box.columnconfigure(1, weight=1)
-        ttk.Label(hook_box, text="Available Hook").grid(row=0, column=0, columnspan=2, sticky="w")
-        self._hook_name_var = tk.StringVar(value="")
-        self._hook_enabled_var = tk.BooleanVar(value=False)
-        self._hook_args: dict | None = None
-
-        self._hook_check = ttk.Checkbutton(
-            hook_box,
-            text="Apply",
-            variable=self._hook_enabled_var,
-            command=lambda: self._on_hook_toggle(callbacks),
-        )
-        self._hook_check.grid(row=1, column=0, sticky="w", padx=(0, 6))
-        name_entry = ttk.Entry(hook_box, textvariable=self._hook_name_var, width=18, state="readonly")
-        name_entry.grid(row=1, column=1, sticky="ew")
-        self._hook_options_button = ttk.Button(
-            hook_box,
-            text="Hook Options",
-            command=lambda: self._open_hook_options(callbacks),
-        )
-        self._hook_options_button.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self._zoom_scale.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         def _resize(_event: tk.Event | None = None) -> None:
             width = max(self.winfo_width(), 1)
             max_left = 440
-            max_mid = 170
-            max_right = 220
+            max_mid = 220
+            max_right = 160
             gap = 24
-            right_width = min(max_right, max(160, width // 4))
-            mid_width = min(max_mid, max(140, width // 6))
-            left_width = min(max_left, max(0, width - right_width - mid_width - gap))
+            mid_width = min(max_mid, max(180, width // 4))
+            right_width = min(max_right, max(120, width // 6))
+            left_width = min(max_left, max(0, width - mid_width - right_width - gap))
             left_width = max(left_width, 1)
             mid_width = max(mid_width, 1)
             right_width = max(right_width, 1)
