@@ -19,7 +19,7 @@ class ViewerTopPanel(ttk.Frame):
         left_container = ttk.Frame(self, width=300)
         left_container.grid(row=0, column=0, sticky="n", padx=(0, 8))
         left_container.grid_propagate(False)
-        mid_container = ttk.Frame(self, width=220)
+        mid_container = ttk.Frame(self, width=240)
         mid_container.grid(row=0, column=1, sticky="n", padx=(8, 8))
         mid_container.grid_propagate(False)
         right_container = ttk.Frame(self, width=160)
@@ -115,7 +115,7 @@ class ViewerTopPanel(ttk.Frame):
         ).pack(side=tk.LEFT)
 
         mid = ttk.Frame(mid_container)
-        mid.place(relx=0.5, rely=0.0, anchor="n", width=220)
+        mid.place(relx=0.5, rely=0.0, anchor="n", width=240)
         mid.columnconfigure(0, weight=1)
 
         hook_frame = ttk.LabelFrame(mid, text="Hook", padding=(6, 4))
@@ -196,16 +196,11 @@ class ViewerTopPanel(ttk.Frame):
                 req_left = 0
             left_width = max(max_left, req_left)
             
-            # 2. Distribute remaining space to Hook (Mid) and Control (Right)
-            remaining = max(0, width - left_width - gap)
+            # 2. Fix Hook (Mid) width (approx 4/5 of left, or fixed 240)
+            mid_width = 240
             
-            # Hook gets ~58% of remaining, Control gets ~42%
-            # Minimums: Hook 220, Control 160
-            mid_width = int(remaining * 0.58)
-            right_width = remaining - mid_width
-            
-            mid_width = max(mid_width, 220)
-            right_width = max(right_width, 160)
+            # 3. Control (Right) takes remainder, min 150
+            right_width = max(150, width - left_width - mid_width - gap)
 
             left_width = max(left_width, 1)
             left_height = max(left.winfo_reqheight(), 1)
