@@ -16,24 +16,19 @@ class ViewerRightPanel(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
-        axis_bar = ttk.Frame(self)
+        axis_bar = ttk.LabelFrame(self, text="")
         axis_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         axis_bar.columnconfigure(0, weight=1)
         axis_bar.columnconfigure(1, weight=1)
         axis_bar.columnconfigure(2, weight=1)
 
-        def _axis_box(parent: tk.Misc, axis: str, var: tk.IntVar, flip_var: tk.BooleanVar, on_change, column: int):
+        def _axis_box(parent: tk.Misc, axis: str, var: tk.IntVar, on_change, column: int):
             pad_x = (0, 6) if column < 2 else (0, 0)
             box = ttk.Frame(parent)
             box.grid(row=0, column=column, sticky="n", padx=pad_x)
-            ttk.Checkbutton(
-                box,
-                text=f"Flip {axis}",
-                variable=flip_var,
-                command=lambda a=axis, v=flip_var: self._on_flip(callbacks, a, v.get()),
-            ).pack(side=tk.TOP, anchor="center")
+            
             row = ttk.Frame(box)
-            row.pack(side=tk.TOP)
+            row.pack(side=tk.TOP, pady=4)
             ttk.Label(row, text=axis).pack(side=tk.LEFT, padx=(0, 4))
             scale = tk.Scale(
                 row,
@@ -51,13 +46,10 @@ class ViewerRightPanel(ttk.Frame):
         self._x_var = tk.IntVar(value=0)
         self._y_var = tk.IntVar(value=0)
         self._z_var = tk.IntVar(value=0)
-        self._flip_x_var = tk.BooleanVar(value=False)
-        self._flip_y_var = tk.BooleanVar(value=False)
-        self._flip_z_var = tk.BooleanVar(value=False)
 
-        self._y_scale = _axis_box(axis_bar, "Y", self._y_var, self._flip_y_var, lambda v: self._on_axis(callbacks, "y", v), 0)
-        self._z_scale = _axis_box(axis_bar, "Z", self._z_var, self._flip_z_var, lambda v: self._on_axis(callbacks, "z", v), 1)
-        self._x_scale = _axis_box(axis_bar, "X", self._x_var, self._flip_x_var, lambda v: self._on_axis(callbacks, "x", v), 2)
+        self._y_scale = _axis_box(axis_bar, "Y", self._y_var, lambda v: self._on_axis(callbacks, "y", v), 0)
+        self._z_scale = _axis_box(axis_bar, "Z", self._z_var, lambda v: self._on_axis(callbacks, "z", v), 1)
+        self._x_scale = _axis_box(axis_bar, "X", self._x_var, lambda v: self._on_axis(callbacks, "x", v), 2)
 
         viewer_host = ttk.Frame(self)
         viewer_host.grid(row=1, column=0, sticky="nsew")
@@ -186,11 +178,6 @@ class ViewerRightPanel(ttk.Frame):
             viewport.capture_to_file(filename)
         except Exception:
             pass
-
-    def _on_flip(self, callbacks, axis: str, enabled: bool) -> None:
-        handler = getattr(callbacks, "on_viewer_flip_change", None)
-        if callable(handler):
-            handler(axis, bool(enabled))
 
     def _on_slicepack(self, callbacks, value: str) -> None:
         if self._suspend_callbacks:

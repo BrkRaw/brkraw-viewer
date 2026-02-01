@@ -48,7 +48,7 @@ class ViewerTopPanel(ttk.Frame):
                 variable=self._space_var,
             ).pack(side=tk.LEFT, padx=(0, 10))
 
-        ttk.Label(orientation_frame, text="Subject Type").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(orientation_frame, text="Type").grid(row=1, column=0, sticky="w", padx=(0, 8))
         self._subject_type_var = tk.StringVar(value="Biped")
         self._subject_type_combo = ttk.Combobox(
             orientation_frame,
@@ -58,6 +58,13 @@ class ViewerTopPanel(ttk.Frame):
         )
         self._subject_type_combo.grid(row=1, column=1, columnspan=2, sticky="ew")
         self._subject_type_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
+
+        ttk.Button(
+            orientation_frame,
+            text="RESET",
+            width=8,
+            command=lambda: self._on_subject_reset(callbacks),
+        ).grid(row=1, column=3, sticky="ew", padx=(12, 0))
 
         ttk.Label(orientation_frame, text="Pose").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
         self._pose_primary_var = tk.StringVar(value="Head")
@@ -76,15 +83,33 @@ class ViewerTopPanel(ttk.Frame):
             state="readonly",
             values=("Supine", "Prone", "Left", "Right"),
         )
-        self._pose_secondary_combo.grid(row=2, column=2, sticky="ew", padx=(8, 0), pady=(6, 0))
+        self._pose_secondary_combo.grid(row=2, column=2, columnspan=2, sticky="ew", padx=(8, 0), pady=(6, 0))
         self._pose_secondary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
 
-        ttk.Button(
-            orientation_frame,
-            text="RESET",
-            width=8,
-            command=lambda: self._on_subject_reset(callbacks),
-        ).grid(row=1, column=3, rowspan=2, sticky="ns", padx=(12, 0), pady=(2, 0))
+        flip_row = ttk.Frame(orientation_frame)
+        flip_row.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        ttk.Label(flip_row, text="Flip").pack(side=tk.LEFT, padx=(0, 14))
+        self._flip_x_var = tk.BooleanVar(value=False)
+        self._flip_y_var = tk.BooleanVar(value=False)
+        self._flip_z_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            flip_row,
+            text="X",
+            variable=self._flip_x_var,
+            command=lambda: self._on_flip(callbacks, "x"),
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Checkbutton(
+            flip_row,
+            text="Y",
+            variable=self._flip_y_var,
+            command=lambda: self._on_flip(callbacks, "y"),
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Checkbutton(
+            flip_row,
+            text="Z",
+            variable=self._flip_z_var,
+            command=lambda: self._on_flip(callbacks, "z"),
+        ).pack(side=tk.LEFT)
 
         mid = ttk.Frame(mid_container)
         mid.place(relx=0.5, rely=0.0, anchor="n", width=220)
@@ -231,6 +256,19 @@ class ViewerTopPanel(ttk.Frame):
             self._zoom_scale.set(float(value))
         finally:
             self._suspend_zoom = False
+
+    def _on_flip(self, callbacks, axis: str) -> None:
+        var = getattr(self, f"_flip_{axis}_var", None)
+        if var is None:
+            return
+        handler = getattr(callbacks, "on_viewer_flip_change", None)
+        if callable(handler):
+            handler(axis, var.get())
+
+    def set_flip_values(self, x: bool, y: bool, z: bool) -> None:
+        self._flip_x_var.set(bool(x))
+        self._flip_y_var.set(bool(y))
+        self._flip_z_var.set(bool(z))
 
     def _on_space(self, callbacks, value: str) -> None:
         handler = getattr(callbacks, "on_viewer_space_change", None)
