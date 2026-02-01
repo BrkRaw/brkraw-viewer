@@ -135,6 +135,8 @@ class MainWindow(ttk.Frame):
             except Exception:
                 cur_w, cur_h = req_w, req_h
 
+            root.minsize(980, 600)
+
             # Only adjust height to avoid clipping; don't lock width.
             if cur_h < req_h:
                 new_h = max(cur_h, req_h)

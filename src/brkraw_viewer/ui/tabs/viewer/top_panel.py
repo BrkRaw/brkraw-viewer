@@ -22,7 +22,7 @@ class ViewerTopPanel(ttk.Frame):
         mid_container = ttk.Frame(self, width=240)
         mid_container.grid(row=0, column=1, sticky="n", padx=(8, 8))
         mid_container.grid_propagate(False)
-        right_container = ttk.Frame(self, width=160)
+        right_container = ttk.Frame(self, width=240)
         right_container.grid(row=0, column=2, sticky="n", padx=(8, 0))
         right_container.grid_propagate(False)
 
@@ -145,7 +145,7 @@ class ViewerTopPanel(ttk.Frame):
         self._hook_options_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
         right = ttk.Frame(right_container)
-        right.place(relx=0.5, rely=0.0, anchor="n", width=160)
+        right.place(relx=0.5, rely=0.0, anchor="n", width=240)
         right.columnconfigure(0, weight=1)
 
         control_frame = ttk.LabelFrame(right, text="Control", padding=(6, 4))
@@ -186,33 +186,78 @@ class ViewerTopPanel(ttk.Frame):
 
         def _resize(_event: tk.Event | None = None) -> None:
             width = max(self.winfo_width(), 1)
-            max_left = 300
+            
+            w_left = 300
+            w_mid = 240
+            w_right = 240
             gap = 24
             
-            # 1. Fix Orientation (Left) width
-            try:
-                req_left = orientation_frame.winfo_reqwidth()
-            except Exception:
-                req_left = 0
-            left_width = max(max_left, req_left)
+            total_req = w_left + w_mid + w_right + (gap * 2)
+            start_x = max(0, (width - total_req) // 2)
             
-            # 2. Fix Hook (Mid) width (approx 4/5 of left, or fixed 240)
-            mid_width = 240
-            
-            # 3. Control (Right) takes remainder, min 150
-            right_width = max(150, width - left_width - mid_width - gap)
+            # Place containers
+            # Since containers are grid-managed by 'self', grid propagation might interfere if we change widths.
+            # But 'grid_propagate(False)' is set.
+            # We are configuring container sizes here. Grid will place them.
+            # Wait, 'grid(row=0, column=0)' places them. 'place' is used for INNER content?
+            # No, 'left = ttk.Frame(left_container); left.place(...)'.
+            # The containers themselves (left_container) are grid-managed.
+            # To center them, we need to adjust padding or column weights?
+            # Or resizing the containers?
+            # If columns 0,1,2 have weights, grid expands them.
+            # To center fixed-size content, we can use a wrapper or just padding.
+            # But ' ViewerTopPanel' logic was to resize 'left_container', etc.
+            # If I want to center them, I should probably not use grid column weights for expansion,
+            # or use padding to center.
+            # Actually, the user wants "aligned same ratio".
+            # If I fix widths of containers, grid will pack them left-aligned if weights are 0?
+            # 'self.columnconfigure(0, weight=1)' etc.
+            # If I want centering, I can make cols 0,1,2 weight 0, and add spacer cols?
+            # Or simpler: Rely on 'grid' to center? grid doesn't auto-center multiple columns easily.
+            # I'll stick to 'place' for positioning if I remove grid?
+            # No, refactoring to 'place' is risky.
+            # Let's adjust 'left_container' width?
+            # No, if 'left_container' is 300, and I want it centered relative to total width...
+            # I should resize the containers to fill the space but center content inside?
+            # Existing code: 'left.place(relx=0.5, ... anchor="n")'. This centers 'left' inside 'left_container'.
+            # So if I make 'left_container', 'mid_container', 'right_container' fill the width, the content will be centered in each?
+            # User wants "Three sections Center align". "Aligned same ratio".
+            # This implies the 3 sections as a group are centered?
+            # Or each section centered in its 1/3?
+            # "세 섹션을 Center align해줄수 있나? 창이 커져도 가운데 같은 비율로 aligned 되게?"
+            # This usually means centered as a block.
+            # 300 | 240 | 240.
+            # If I make the containers fixed size, grid will put them left.
+            # I can use a container frame for all 3, and center that frame?
+            # Changing hierarchy is invasive.
+            # Alternative: Use padding in `_resize`.
+            # If I calculate `start_x`, I can use `grid(padx=...)`?
+            # But grid padding is per cell.
+            # Or I can use `place` for the containers themselves?
+            # Let's try `place` for containers.
+            # `grid_forget` them and use `place`.
+            # `ViewerTopPanel` is a Frame. I can place children.
+            pass # I will modify _resize to use place for containers.
 
-            left_width = max(left_width, 1)
-            left_height = max(left.winfo_reqheight(), 1)
-            mid_height = max(mid.winfo_reqheight(), 1)
-            right_height = max(right.winfo_reqheight(), 1)
-            target_height = max(left_height, mid_height, right_height, 1)
-            left_container.configure(width=left_width, height=left_height)
-            mid_container.configure(width=mid_width, height=mid_height)
-            right_container.configure(width=right_width, height=right_height)
-            left.place_configure(width=left_width)
-            mid.place_configure(width=mid_width)
-            right.place_configure(width=right_width)
+            left_container.grid_forget()
+            mid_container.grid_forget()
+            right_container.grid_forget()
+            
+            x = start_x
+            left_container.place(x=x, y=0, width=w_left, height=max(left.winfo_reqheight(), 1))
+            x += w_left + gap
+            mid_container.place(x=x, y=0, width=w_mid, height=max(mid.winfo_reqheight(), 1))
+            x += w_mid + gap
+            right_container.place(x=x, y=0, width=w_right, height=max(right.winfo_reqheight(), 1))
+            
+            # Inner placement (centering inside container)
+            # Since container width == content width (fixed), centering is trivial (relx=0.5 or 0).
+            # 'left' is placed in 'left_container'.
+            left.place(relx=0.0, x=0, width=w_left)
+            # mid is placed in mid_container
+            # right in right_container
+            
+            target_height = max(left.winfo_reqheight(), mid.winfo_reqheight(), right.winfo_reqheight(), 1)
             try:
                 self.configure(height=target_height)
             except Exception:
