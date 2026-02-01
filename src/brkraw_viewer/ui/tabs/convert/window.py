@@ -89,8 +89,8 @@ class ConvertTab:
         main_grid.grid(row=0, column=0, sticky="nsew")
         main_grid.columnconfigure(0, weight=1, uniform="convert_cols")
         main_grid.columnconfigure(1, weight=1, uniform="convert_cols")
-        main_grid.rowconfigure(0, weight=1, uniform="convert_rows")
-        main_grid.rowconfigure(1, weight=1, uniform="convert_rows")
+        main_grid.rowconfigure(0, weight=0)
+        main_grid.rowconfigure(1, weight=1)
 
         layout_left = ttk.Frame(main_grid)
         layout_left.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=(0, 6))

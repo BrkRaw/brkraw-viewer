@@ -91,11 +91,11 @@ class ParamsTab:
         paned.grid(row=0, column=0, sticky="nsew")
         results_frame.rowconfigure(0, weight=1)
 
-        columns = ("file", "key", "type", "value")
+        columns = ("file", "key", "type", "value", "full_value")
         tree_frame = ttk.Frame(paned)
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
-        tree = ttk.Treeview(tree_frame, columns=columns, show="headings")
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", displaycolumns=("file", "key", "type", "value"), height=5)
         tree.grid(row=0, column=0, sticky="nsew")
         tree.heading("file", text="File", anchor="w", command=lambda: self._params_sort_by("file"))
         tree.heading("key", text="Key", anchor="w", command=lambda: self._params_sort_by("key"))
@@ -115,18 +115,21 @@ class ParamsTab:
 
         detail_frame = ttk.LabelFrame(paned, text="Value Detail", padding=(6, 4))
         detail_frame.columnconfigure(0, weight=1)
-        self._detail_text = tk.Text(detail_frame, height=4, wrap="word")
-        self._detail_text.grid(row=0, column=0, sticky="ew")
-        self._detail_text.configure(state=tk.DISABLED)
+        detail_frame.rowconfigure(0, weight=1)
+        self._detail_text = tk.Text(detail_frame, wrap="word")
+        self._detail_text.grid(row=0, column=0, sticky="nsew")
+        
+        detail_scroll = ttk.Scrollbar(detail_frame, orient="vertical", command=self._detail_text.yview)
+        detail_scroll.grid(row=0, column=1, sticky="ns")
+        self._detail_text.configure(yscrollcommand=detail_scroll.set, state=tk.DISABLED)
+        
         paned.add(tree_frame, weight=3)
         paned.add(detail_frame, weight=1)
 
     def _run_param_search(self) -> None:
         query = (self._param_query_var.get() or "").strip()
         scope = (self._param_scope_var.get() or "all").strip()
-        if not query:
-            self.set_search_results([])
-            return
+        
         handler = getattr(self._cb, "on_param_search", None)
         if callable(handler):
             result = handler(scope, query)
@@ -143,13 +146,29 @@ class ParamsTab:
     def set_search_results(self, rows: List[dict[str, Any]], *, truncated: int = 0) -> None:
         self._params_tree.delete(*self._params_tree.get_children())
         for row in rows:
+            display_val = row.get("value", "")
+            full_val = row.get("full_value", "")
+            if not full_val and display_val:
+                full_val = display_val
             self._params_tree.insert(
                 "",
                 "end",
-                values=(row.get("file", ""), row.get("key", ""), row.get("type", ""), row.get("value", "")),
+                values=(
+                    row.get("file", ""),
+                    row.get("key", ""),
+                    row.get("type", ""),
+                    display_val,
+                    full_val,
+                ),
             )
         if truncated:
-            self._params_tree.insert("", "end", values=("", "", "", f"... {truncated} more result(s)"))
+            self._params_tree.insert(
+                "",
+                "end",
+                values=("", "", "", f"... {truncated} more result(s)", ""),
+                tags=("truncated",),
+            )
+        self._apply_params_sort()
         self._update_params_sort_heading()
         self._clear_detail()
 
@@ -159,7 +178,43 @@ class ParamsTab:
         else:
             self._params_sort_key = key
             self._params_sort_desc = False
+        self._apply_params_sort()
         self._update_params_sort_heading()
+
+    def _apply_params_sort(self) -> None:
+        if not self._params_tree or not self._params_sort_key:
+            return
+
+        col_map = {"file": 0, "key": 1, "type": 2, "value": 3}
+        idx = col_map.get(self._params_sort_key)
+        if idx is None:
+            return
+
+        items = list(self._params_tree.get_children())
+        regular_items = []
+        truncated_items = []
+
+        for item in items:
+            tags = self._params_tree.item(item, "tags")
+            if "truncated" in tags:
+                truncated_items.append(item)
+            else:
+                regular_items.append(item)
+
+        def _sort_val(item_id: str) -> tuple[int, Any]:
+            values = self._params_tree.item(item_id, "values")
+            raw = values[idx] if idx < len(values) else ""
+            try:
+                return (0, float(raw))
+            except Exception:
+                return (1, str(raw).lower())
+
+        regular_items.sort(key=_sort_val, reverse=self._params_sort_desc)
+
+        for item in regular_items:
+            self._params_tree.move(item, "", "end")
+        for item in truncated_items:
+            self._params_tree.move(item, "", "end")
 
     def _update_params_sort_heading(self) -> None:
         if not self._params_tree:
@@ -186,9 +241,24 @@ class ParamsTab:
             self._clear_detail()
             return
         values = self._params_tree.item(items[0], "values")
-        value = values[3] if len(values) > 3 else ""
+        # value is at index 3, full_value at index 4
+        value = ""
+        if len(values) > 4:
+            value = values[4]
+        elif len(values) > 3:
+            value = values[3]
+            
         if isinstance(value, str):
             value = value.replace("\\n", "\n")
+            try:
+                import ast
+                import pprint
+                val_obj = ast.literal_eval(value)
+                if isinstance(val_obj, (dict, list, tuple)):
+                    value = pprint.pformat(val_obj, indent=2)
+            except Exception:
+                pass
+
         self._detail_text.configure(state=tk.NORMAL)
         self._detail_text.delete("1.0", tk.END)
         self._detail_text.insert(tk.END, str(value))
