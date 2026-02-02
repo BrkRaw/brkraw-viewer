@@ -87,7 +87,15 @@ jobs:
             exit 0
           fi
 
-          version=$(python3 -c "import re; from pathlib import Path; text=Path('pyproject.toml').read_text(encoding='utf-8'); m=re.search(r'^version\\s*=\\s*[\\\"\\\']([^\\\"\\\']+)[\\\"\\\']', text, flags=re.MULTILINE); print(m.group(1) if m else '')")
+          version=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("pyproject.toml").read_text(encoding="utf-8")
+          m = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', text, flags=re.MULTILINE)
+          print(m.group(1) if m else "")
+          PY
+          )
           if [[ -z "${version}" ]]; then
             echo "No version found in pyproject.toml" >&2
             exit 1
