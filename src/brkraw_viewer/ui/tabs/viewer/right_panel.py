@@ -30,14 +30,27 @@ class ViewerRightPanel(ttk.Frame):
             row = ttk.Frame(box)
             row.pack(side=tk.TOP, pady=4)
             ttk.Label(row, text=axis).pack(side=tk.LEFT, padx=(0, 4))
+            
+            def _on_entry(_event):
+                try:
+                    val = var.get()
+                    on_change(val)
+                except Exception:
+                    pass
+
+            entry = ttk.Entry(row, textvariable=var, width=5)
+            entry.pack(side=tk.LEFT, padx=(0, 4))
+            entry.bind("<Return>", _on_entry)
+            entry.bind("<FocusOut>", _on_entry)
+
             scale = tk.Scale(
                 row,
                 from_=0,
                 to=0,
                 orient=tk.HORIZONTAL,
-                showvalue=True,
+                showvalue=False,
                 command=on_change,
-                length=140,
+                length=100,
             )
             scale.pack(side=tk.LEFT)
             scale.configure(variable=var)
@@ -85,21 +98,15 @@ class ViewerRightPanel(ttk.Frame):
         bottom_bar.columnconfigure(0, weight=0)
         bottom_bar.columnconfigure(1, weight=1)
         bottom_bar.columnconfigure(2, weight=0)
+        
         frame_inner = ttk.Frame(bottom_bar)
         frame_inner.grid(row=0, column=0, sticky="w")
-        ttk.Label(frame_inner, text="Frame").pack(side=tk.LEFT, padx=(0, 4))
         self._frame_var = tk.IntVar(value=0)
-        self._frame_scale = tk.Scale(
-            frame_inner,
-            from_=0,
-            to=0,
-            orient=tk.HORIZONTAL,
-            showvalue=True,
-            command=lambda v: self._on_frame(callbacks, v),
-            length=160,
+        frame_row, self._frame_scale = self._create_slider_row(
+            frame_inner, "Frame", self._frame_var, 
+            lambda v: self._on_frame(callbacks, v), length=160
         )
-        self._frame_scale.pack(side=tk.LEFT)
-        self._frame_scale.configure(variable=self._frame_var)
+        frame_row.pack(side=tk.LEFT)
 
         extra_frame = ttk.Frame(bottom_bar)
         extra_frame.grid(row=0, column=1, sticky="w", padx=(10, 0))
@@ -109,32 +116,13 @@ class ViewerRightPanel(ttk.Frame):
 
         slicepack_box = ttk.Frame(bottom_bar)
         slicepack_box.grid(row=0, column=2, sticky="e")
-        ttk.Label(slicepack_box, text="Slicepack").pack(side=tk.LEFT, padx=(0, 4))
         self._slicepack_var = tk.IntVar(value=0)
-        self._slicepack_scale = tk.Scale(
-            slicepack_box,
-            from_=0,
-            to=0,
-            orient=tk.HORIZONTAL,
-            showvalue=True,
-            command=lambda v: self._on_slicepack(callbacks, v),
-            length=160,
+        sp_row, self._slicepack_scale = self._create_slider_row(
+            slicepack_box, "Slicepack", self._slicepack_var,
+            lambda v: self._on_slicepack(callbacks, v), length=160
         )
-        self._slicepack_scale.pack(side=tk.LEFT)
-        self._slicepack_scale.configure(variable=self._slicepack_var)
+        sp_row.pack(side=tk.LEFT)
 
-        value_bar = ttk.Frame(self)
-        value_bar.grid(row=3, column=0, sticky="ew", pady=(4, 0))
-        value_bar.columnconfigure(1, weight=1)
-        ttk.Label(value_bar, text="Value").grid(row=0, column=0, sticky="w", padx=(2, 6))
-        self._value_button = ttk.Button(
-            value_bar,
-            textvariable=self._value_var,
-            command=lambda: self._on_timecourse(callbacks),
-            state="disabled",
-            width=26,
-        )
-        self._value_button.grid(row=0, column=1, sticky="w")
         self._slicepack_box = slicepack_box
         self._frame_box = frame_inner
         self._bottom_bar = bottom_bar
@@ -143,6 +131,35 @@ class ViewerRightPanel(ttk.Frame):
 
         self._last_indices: Optional[tuple[int, int, int]] = None
         self._suspend_callbacks = False
+
+    def _create_slider_row(self, parent: tk.Misc, label: str, var: tk.IntVar, command, length: int = 140) -> tuple[ttk.Frame, tk.Scale]:
+        row = ttk.Frame(parent)
+        ttk.Label(row, text=label).pack(side=tk.LEFT, padx=(0, 4))
+        
+        def _on_entry(_event):
+            try:
+                val = var.get()
+                command(val)
+            except Exception:
+                pass
+
+        entry = ttk.Entry(row, textvariable=var, width=5)
+        entry.pack(side=tk.LEFT, padx=(0, 4))
+        entry.bind("<Return>", _on_entry)
+        entry.bind("<FocusOut>", _on_entry)
+
+        scale = tk.Scale(
+            row,
+            from_=0,
+            to=0,
+            orient=tk.HORIZONTAL,
+            showvalue=False,
+            command=command,
+            length=length,
+        )
+        scale.pack(side=tk.LEFT)
+        scale.configure(variable=var)
+        return row, scale
 
     def _on_axis(self, callbacks, axis: str, value: str) -> None:
         if self._suspend_callbacks:
@@ -275,20 +292,12 @@ class ViewerRightPanel(ttk.Frame):
             self._extra_dim_vars = []
             self._extra_dim_scales = []
             for idx, size in enumerate(sizes):
-                label = ttk.Label(self._extra_frame, text=f"Dim {idx + 5}")
-                label.grid(row=0, column=idx * 2, sticky="w", padx=(0, 4))
                 var = tk.IntVar(value=0)
-                scale = tk.Scale(
-                    self._extra_frame,
-                    from_=0,
-                    to=max(int(size) - 1, 0),
-                    orient=tk.HORIZONTAL,
-                    showvalue=True,
-                    command=lambda v, i=idx: self._on_extra_dim(i, v),
-                    length=140,
+                row, scale = self._create_slider_row(
+                    self._extra_frame, f"Dim {idx + 5}", var,
+                    lambda v, i=idx: self._on_extra_dim(i, v), length=160
                 )
-                scale.grid(row=0, column=idx * 2 + 1, sticky="w", padx=(0, 10))
-                scale.configure(variable=var)
+                row.grid(row=0, column=idx, sticky="w", padx=(0, 10))
                 self._extra_dim_vars.append(var)
                 self._extra_dim_scales.append(scale)
         for idx, size in enumerate(sizes):
@@ -393,14 +402,6 @@ class ViewerRightPanel(ttk.Frame):
             )
         self._last_zoom_source = None
 
-    def set_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
-        self._value_var.set(value_text)
-        state = "normal" if plot_enabled else "disabled"
-        try:
-            self._value_button.configure(state=state)
-        except Exception:
-            pass
-
     def _compute_shared_mm_per_px(
         self,
         views: dict,
@@ -459,11 +460,6 @@ class ViewerRightPanel(ttk.Frame):
             relaxed = min_mm * 1.05
             return min(relaxed, max_mm)
         return max(candidates)
-
-    def _on_timecourse(self, callbacks) -> None:
-        handler = getattr(callbacks, "on_viewer_timecourse_toggle", None)
-        if callable(handler):
-            handler()
 
     def _on_resize(self, *_: object) -> None:
         handler = getattr(self._callbacks, "on_viewer_resize", None)

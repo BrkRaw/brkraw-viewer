@@ -30,13 +30,13 @@ class ViewerTopPanel(ttk.Frame):
         left.place(relx=0.5, rely=0.0, anchor="n", width=300)
         left.columnconfigure(0, weight=1)
 
-        orientation_frame = ttk.LabelFrame(left, text="Orientation", padding=(6, 4))
-        orientation_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 0))
-        orientation_frame.columnconfigure(1, weight=1, uniform="viewer_orientation_cols")
-        orientation_frame.columnconfigure(2, weight=1, uniform="viewer_orientation_cols")
+        self.orientation_frame = ttk.LabelFrame(left, text="Orientation", padding=(6, 4))
+        self.orientation_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 0))
+        self.orientation_frame.columnconfigure(1, weight=1, uniform="viewer_orientation_cols")
+        self.orientation_frame.columnconfigure(2, weight=1, uniform="viewer_orientation_cols")
 
-        ttk.Label(orientation_frame, text="Space").grid(row=0, column=0, sticky="w", padx=(0, 8))
-        space_radio_frame = ttk.Frame(orientation_frame)
+        ttk.Label(self.orientation_frame, text="Space").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        space_radio_frame = ttk.Frame(self.orientation_frame)
         space_radio_frame.grid(row=0, column=1, columnspan=2, sticky="ew", pady=(0, 4))
         self._space_var = tk.StringVar(value="scanner")
         for label, value in (("raw", "raw"), ("scanner", "scanner"), ("subject_ras", "subject_ras")):
@@ -48,10 +48,10 @@ class ViewerTopPanel(ttk.Frame):
                 variable=self._space_var,
             ).pack(side=tk.LEFT, padx=(0, 10))
 
-        ttk.Label(orientation_frame, text="Type").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(self.orientation_frame, text="Type").grid(row=1, column=0, sticky="w", padx=(0, 8))
         self._subject_type_var = tk.StringVar(value="Biped")
         self._subject_type_combo = ttk.Combobox(
-            orientation_frame,
+            self.orientation_frame,
             textvariable=self._subject_type_var,
             state="readonly",
             values=("Biped", "Quadruped", "Phantom", "Other", "OtherAnimal"),
@@ -61,17 +61,17 @@ class ViewerTopPanel(ttk.Frame):
         self._subject_type_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
 
         ttk.Button(
-            orientation_frame,
+            self.orientation_frame,
             text="RESET",
             width=6,
             command=lambda: self._on_subject_reset(callbacks),
         ).grid(row=1, column=2, sticky="ew", padx=(4, 0))
 
-        ttk.Label(orientation_frame, text="Pose").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
+        ttk.Label(self.orientation_frame, text="Pose").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
         self._pose_primary_var = tk.StringVar(value="Head")
         self._pose_secondary_var = tk.StringVar(value="Supine")
         self._pose_primary_combo = ttk.Combobox(
-            orientation_frame,
+            self.orientation_frame,
             textvariable=self._pose_primary_var,
             state="readonly",
             values=("Head", "Foot"),
@@ -80,7 +80,7 @@ class ViewerTopPanel(ttk.Frame):
         self._pose_primary_combo.grid(row=2, column=1, sticky="ew", padx=(0, 4), pady=(6, 0))
         self._pose_primary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
         self._pose_secondary_combo = ttk.Combobox(
-            orientation_frame,
+            self.orientation_frame,
             textvariable=self._pose_secondary_var,
             state="readonly",
             values=("Supine", "Prone", "Left", "Right"),
@@ -89,7 +89,7 @@ class ViewerTopPanel(ttk.Frame):
         self._pose_secondary_combo.grid(row=2, column=2, sticky="ew", padx=(4, 0), pady=(6, 0))
         self._pose_secondary_combo.bind("<<ComboboxSelected>>", lambda *_: self._on_subject_change(callbacks))
 
-        flip_row = ttk.Frame(orientation_frame)
+        flip_row = ttk.Frame(self.orientation_frame)
         flip_row.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
         ttk.Label(flip_row, text="Flip").pack(side=tk.LEFT, padx=(0, 14))
         self._flip_x_var = tk.BooleanVar(value=False)
@@ -144,122 +144,109 @@ class ViewerTopPanel(ttk.Frame):
         )
         self._hook_options_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(6, 0))
 
+        self._value_var = tk.StringVar(value="-")
+        value_frame = ttk.LabelFrame(mid, text="Value", padding=(6, 4))
+        value_frame.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
+        value_frame.columnconfigure(0, weight=1)
+        
+        self._value_button = ttk.Button(
+            value_frame,
+            textvariable=self._value_var,
+            command=self._on_timecourse,
+            state="disabled",
+        )
+        self._value_button.grid(row=0, column=0, sticky="ew")
+
         right = ttk.Frame(right_container)
         right.place(relx=0.5, rely=0.0, anchor="n", width=240)
         right.columnconfigure(0, weight=1)
 
-        control_frame = ttk.LabelFrame(right, text="Control", padding=(6, 4))
-        control_frame.grid(row=0, column=0, sticky="nsew")
-        control_frame.columnconfigure(0, weight=1)
+        self.control_frame = ttk.LabelFrame(right, text="Control", padding=(6, 4))
+        self.control_frame.grid(row=0, column=0, sticky="nsew")
+        self.control_frame.columnconfigure(0, weight=1)
 
         self._crosshair_var = tk.BooleanVar(value=True)
         self._rgb_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            control_frame,
+            self.control_frame,
             text="Crosshair",
             variable=self._crosshair_var,
             command=lambda: self._on_crosshair(callbacks),
         ).grid(row=0, column=0, sticky="w", pady=(0, 4))
         self._rgb_check = ttk.Checkbutton(
-            control_frame,
+            self.control_frame,
             text="RGB",
             variable=self._rgb_var,
             command=lambda: self._on_rgb(callbacks),
         )
         self._rgb_check.grid(row=1, column=0, sticky="w", pady=(0, 4))
-        zoom_row = ttk.Frame(control_frame)
-        zoom_row.grid(row=2, column=0, pady=(4, 0), sticky="ew")
-        ttk.Label(zoom_row, text="Zoom").pack(side=tk.LEFT, padx=(0, 4))
+        
+        zoom_box = ttk.Frame(self.control_frame)
+        zoom_box.grid(row=2, column=0, pady=(4, 0), sticky="ew")
+        
+        zoom_top = ttk.Frame(zoom_box)
+        zoom_top.pack(side=tk.TOP, fill=tk.X)
+        ttk.Label(zoom_top, text="Zoom").pack(side=tk.LEFT, padx=(0, 4))
+        
+        self._zoom_entry_var = tk.StringVar(value="1.00")
+        self._zoom_entry = ttk.Entry(zoom_top, textvariable=self._zoom_entry_var, width=6)
+        self._zoom_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._zoom_entry.bind("<Return>", self._on_zoom_entry)
+        self._zoom_entry.bind("<FocusOut>", self._on_zoom_entry)
+
         self._zoom_scale = tk.Scale(
-            zoom_row,
+            zoom_box,
             from_=1.0,
             to=4.0,
             resolution=0.01,
-            digits=2,
+            digits=3,
             orient=tk.HORIZONTAL,
-            showvalue=True,
+            showvalue=False,
             length=80,
             command=self._on_zoom,
         )
         self._zoom_scale.set(1.0)
-        self._zoom_scale.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._zoom_scale.pack(side=tk.TOP, fill=tk.X, expand=True)
 
         def _resize(_event: tk.Event | None = None) -> None:
             width = max(self.winfo_width(), 1)
             
-            w_left = 300
-            w_mid = 240
-            w_right = 240
-            gap = 24
+            w_left = max(left.winfo_reqwidth(), 10)
+            w_mid = max(mid.winfo_reqwidth(), 10)
+            w_right = max(right.winfo_reqwidth(), 10)
+            gap = 12
             
             total_req = w_left + w_mid + w_right + (gap * 2)
             start_x = max(0, (width - total_req) // 2)
             
-            # Place containers
-            # Since containers are grid-managed by 'self', grid propagation might interfere if we change widths.
-            # But 'grid_propagate(False)' is set.
-            # We are configuring container sizes here. Grid will place them.
-            # Wait, 'grid(row=0, column=0)' places them. 'place' is used for INNER content?
-            # No, 'left = ttk.Frame(left_container); left.place(...)'.
-            # The containers themselves (left_container) are grid-managed.
-            # To center them, we need to adjust padding or column weights?
-            # Or resizing the containers?
-            # If columns 0,1,2 have weights, grid expands them.
-            # To center fixed-size content, we can use a wrapper or just padding.
-            # But ' ViewerTopPanel' logic was to resize 'left_container', etc.
-            # If I want to center them, I should probably not use grid column weights for expansion,
-            # or use padding to center.
-            # Actually, the user wants "aligned same ratio".
-            # If I fix widths of containers, grid will pack them left-aligned if weights are 0?
-            # 'self.columnconfigure(0, weight=1)' etc.
-            # If I want centering, I can make cols 0,1,2 weight 0, and add spacer cols?
-            # Or simpler: Rely on 'grid' to center? grid doesn't auto-center multiple columns easily.
-            # I'll stick to 'place' for positioning if I remove grid?
-            # No, refactoring to 'place' is risky.
-            # Let's adjust 'left_container' width?
-            # No, if 'left_container' is 300, and I want it centered relative to total width...
-            # I should resize the containers to fill the space but center content inside?
-            # Existing code: 'left.place(relx=0.5, ... anchor="n")'. This centers 'left' inside 'left_container'.
-            # So if I make 'left_container', 'mid_container', 'right_container' fill the width, the content will be centered in each?
-            # User wants "Three sections Center align". "Aligned same ratio".
-            # This implies the 3 sections as a group are centered?
-            # Or each section centered in its 1/3?
-            # "세 섹션을 Center align해줄수 있나? 창이 커져도 가운데 같은 비율로 aligned 되게?"
-            # This usually means centered as a block.
-            # 300 | 240 | 240.
-            # If I make the containers fixed size, grid will put them left.
-            # I can use a container frame for all 3, and center that frame?
-            # Changing hierarchy is invasive.
-            # Alternative: Use padding in `_resize`.
-            # If I calculate `start_x`, I can use `grid(padx=...)`?
-            # But grid padding is per cell.
-            # Or I can use `place` for the containers themselves?
-            # Let's try `place` for containers.
-            # `grid_forget` them and use `place`.
-            # `ViewerTopPanel` is a Frame. I can place children.
-            pass # I will modify _resize to use place for containers.
-
             left_container.grid_forget()
             mid_container.grid_forget()
             right_container.grid_forget()
             
             x = start_x
-            left_container.place(x=x, y=0, width=w_left, height=max(left.winfo_reqheight(), 1))
+            
+            h_left = max(left.winfo_reqheight(), 1)
+            h_mid = max(mid.winfo_reqheight(), 1)
+            h_right = max(right.winfo_reqheight(), 1)
+            
+            max_h = max(h_left, h_mid, h_right)
+            
+            left_container.place(x=x, y=0, width=w_left, height=max_h)
+            y_left = (max_h - h_left) // 2
+            left.place(x=0, y=y_left, width=w_left, height=h_left)
             x += w_left + gap
-            mid_container.place(x=x, y=0, width=w_mid, height=max(mid.winfo_reqheight(), 1))
+            
+            mid_container.place(x=x, y=0, width=w_mid, height=max_h)
+            y_mid = (max_h - h_mid) // 2
+            mid.place(x=0, y=y_mid, width=w_mid, height=h_mid)
             x += w_mid + gap
-            right_container.place(x=x, y=0, width=w_right, height=max(right.winfo_reqheight(), 1))
             
-            # Inner placement (centering inside container)
-            # Since container width == content width (fixed), centering is trivial (relx=0.5 or 0).
-            # 'left' is placed in 'left_container'.
-            left.place(relx=0.0, x=0, width=w_left)
-            # mid is placed in mid_container
-            # right in right_container
+            right_container.place(x=x, y=0, width=w_right, height=max_h)
+            y_right = (max_h - h_right) // 2
+            right.place(x=0, y=y_right, width=w_right, height=h_right)
             
-            target_height = max(left.winfo_reqheight(), mid.winfo_reqheight(), right.winfo_reqheight(), 1)
             try:
-                self.configure(height=target_height)
+                self.configure(height=max_h)
             except Exception:
                 pass
 
@@ -275,7 +262,6 @@ class ViewerTopPanel(ttk.Frame):
         hook_name = (self._hook_name_var.get() or "").strip()
         if not hook_name or hook_name == "None":
             return
-
         def _apply(values: dict) -> None:
             handler = getattr(callbacks, "on_hook_options_apply", None)
             if callable(handler):
@@ -284,7 +270,6 @@ class ViewerTopPanel(ttk.Frame):
             fallback = getattr(callbacks, "on_viewer_hook_args_change", None)
             if callable(fallback):
                 fallback(values)
-
         dialog = HookOptionsDialog(self, hook_name=hook_name, hook_args=self._hook_args, on_apply=_apply)
         dialog.show()
 
@@ -301,14 +286,24 @@ class ViewerTopPanel(ttk.Frame):
     def _on_zoom(self, value: str) -> None:
         if self._suspend_zoom:
             return
+        val = float(value)
+        self._zoom_entry_var.set(f"{val:.2f}")
         handler = getattr(self._callbacks, "on_viewer_zoom_change", None)
         if callable(handler):
-            handler(float(value))
+            handler(val)
+
+    def _on_zoom_entry(self, _event: tk.Event) -> None:
+        try:
+            val = float(self._zoom_entry_var.get())
+            self._zoom_scale.set(val) 
+        except ValueError:
+            pass
 
     def set_zoom_value(self, value: float) -> None:
         self._suspend_zoom = True
         try:
             self._zoom_scale.set(float(value))
+            self._zoom_entry_var.set(f"{float(value):.2f}")
         finally:
             self._suspend_zoom = False
 
@@ -362,21 +357,17 @@ class ViewerTopPanel(ttk.Frame):
         has_hook = bool(hook_name and hook_name != "None")
         display_name = hook_name if has_hook else "Disabled"
         self._hook_name_var.set(display_name)
-        
         if not has_hook:
             self._hook_enabled_var.set(False)
         else:
             self._hook_enabled_var.set(bool(enabled))
-
         state = "normal" if allow_toggle and has_hook else "disabled"
         try:
             self._hook_check.configure(state=state)
-        except Exception:
-            pass
+        except Exception: pass
         try:
             self._hook_options_button.configure(state=state)
-        except Exception:
-            pass
+        except Exception: pass
 
     def set_hook_args(self, hook_args: dict | None) -> None:
         self._hook_args = dict(hook_args) if isinstance(hook_args, dict) else None
@@ -386,5 +377,35 @@ class ViewerTopPanel(ttk.Frame):
         state = "normal" if enabled else "disabled"
         try:
             self._rgb_check.configure(state=state)
-        except Exception:
-            pass
+        except Exception: pass
+
+    def set_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
+        text = value_text.strip()
+        if text.startswith("[") and text.endswith("]"):
+            text = text[1:-1].strip()
+        self._value_var.set(text)
+        state = "normal" if plot_enabled else "disabled"
+        try:
+            self._value_button.configure(state=state)
+        except Exception: pass
+
+    def _on_timecourse(self) -> None:
+        handler = getattr(self._callbacks, "on_viewer_timecourse_toggle", None)
+        if callable(handler):
+            handler()
+
+    def set_controls_enabled(self, enabled: bool) -> None:
+        target_state = "normal" if enabled else "disabled"
+        def _recursive_set(widget):
+            try:
+                if isinstance(widget, ttk.Combobox):
+                    widget.configure(state="readonly" if enabled else "disabled")
+                elif isinstance(widget, (ttk.Entry, tk.Entry, ttk.Button, ttk.Checkbutton, ttk.Radiobutton, tk.Scale)):
+                    widget.configure(state=target_state)
+            except Exception: pass
+            for child in widget.winfo_children():
+                _recursive_set(child)
+        if hasattr(self, "orientation_frame"):
+            _recursive_set(self.orientation_frame)
+        if hasattr(self, "control_frame"):
+            _recursive_set(self.control_frame)

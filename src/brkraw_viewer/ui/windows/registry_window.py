@@ -360,13 +360,10 @@ class RegistryWindow:
             # Use the largest of title, 100px floor, or content
             max_w = max(title_w, min_w, max_content_w)
             
-            # Clamp content-based width to reasonable default if too large,
-            # but respect title width and floor as absolute minimum.
             default_w = next((int(c.get("width", 120)) for c in self._columns if c["key"] == key), 120)
             max_w = min(max_w, max(max_w, default_w * 2))
             max_w = min(max_w, 600)
             
-            # FINAL CHECK: Must be at least title_w and floor
             max_w = max(max_w, title_w, min_w)
             
             widths[key] = max_w

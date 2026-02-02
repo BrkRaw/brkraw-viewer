@@ -4,7 +4,7 @@ import datetime as dt
 import re
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, Union, Sequence, cast
+from typing import Optional, Union, Callable, Sequence, cast
 
 from .helper import (
     flatten_keys as _flatten_keys,
@@ -235,6 +235,7 @@ class ViewerController:
             self._frame_cache.clear()
         self._render_viewer_views()
         if self._view is not None:
+            self._view.set_viewer_controls_enabled(True)
             self._view.set_status("Volume loaded.")
 
     def _on_timecourse_cache_result(self, result: TimecourseCacheResult) -> None:
@@ -509,8 +510,22 @@ class ViewerController:
         self._view.set_viewer_value_display(value_text, plot_enabled=plot_enabled)
         self._update_timecourse_plot(indices=(xi, yi, zi))
         if self._view is not None:
+            space = self.state.viewer.space
+            if space == "subject_ras":
+                space_str = "Subject RAS"
+            elif space == "scanner":
+                space_str = "Scanner"
+            else:
+                space_str = space.title()
+            
+            hook_str = "Applied" if self._viewer_hook_enabled else "None"
+            zoom_str = f"{zoom:.2f}x"
+            rgb_str = "On" if self.state.viewer.rgb_mode else "Off"
+            cross_str = "On" if self.state.viewer.show_crosshair else "Off"
+            
+            status = f"Space: {space_str} | Hook: {hook_str} | Zoom: {zoom_str} | RGB: {rgb_str} | Crosshair: {cross_str}"
             label = f"Slicepack {self.state.viewer.slicepack_index + 1}/{slicepacks}"
-            self._view.set_viewer_status(f"Space: {self.state.viewer.space} (RAS) | {label}")
+            self._view.set_viewer_status(f"{status} | {label}")
 
     def _clear_viewer_volume(self, *, status: Optional[str] = None) -> None:
         self._viewer_volume = None
@@ -524,6 +539,7 @@ class ViewerController:
             return
         self._view.set_viewer_views({})
         self._view.set_viewer_value_display("[ - ]", plot_enabled=False)
+        self._view.set_viewer_controls_enabled(False)
         if status:
             self._view.set_viewer_status(status)
 

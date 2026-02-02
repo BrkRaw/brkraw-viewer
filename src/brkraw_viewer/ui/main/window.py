@@ -135,7 +135,7 @@ class MainWindow(ttk.Frame):
             except Exception:
                 cur_w, cur_h = req_w, req_h
 
-            root.minsize(980, 600)
+            root.minsize(1050, 600)
 
             # Only adjust height to avoid clipping; don't lock width.
             if cur_h < req_h:
@@ -363,6 +363,12 @@ class MainWindow(ttk.Frame):
         target = getattr(tab, "_tab_instance", None)
         if target is not None and hasattr(target, "set_zoom_value"):
             target.set_zoom_value(value)
+
+    def set_viewer_controls_enabled(self, enabled: bool) -> None:
+        tab = self.tabs.get_tab("Viewer")
+        target = getattr(tab, "_tab_instance", None)
+        if target is not None and hasattr(target, "set_controls_enabled"):
+            target.set_controls_enabled(enabled)
 
     def set_viewer_hook_state(self, hook_name: str, enabled: bool, hook_args: Optional[dict], *, allow_toggle: bool = True) -> None:
         tab = self.tabs.get_tab("Viewer")
