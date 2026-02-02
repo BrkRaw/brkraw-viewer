@@ -4,9 +4,34 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 import tkinter.font as tkfont
 from pathlib import Path
-from typing import Callable, List, Optional, Any
+from typing import Callable, List, Optional, Any, cast
 
 from brkraw_viewer.app.services.viewer_config import registry_columns
+
+
+class Tooltip:
+    def __init__(self, widget: tk.Widget) -> None:
+        self.widget = widget
+        self.tip_window: Optional[tk.Toplevel] = None
+
+    def show_tip(self, text: str, x: int, y: int) -> None:
+        if self.tip_window or not text:
+            return
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            tw, text=text, justify=tk.LEFT,
+            background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+            font=("TkDefaultFont", 9)
+        )
+        label.pack(ipadx=1)
+
+    def hide_tip(self) -> None:
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
 
 
 class RegistryWindow:
@@ -30,10 +55,11 @@ class RegistryWindow:
 
         self._window = tk.Toplevel(parent)
         self._window.title("Dataset Registry")
-        self._window.geometry("920x420")
+        self._window.geometry("960x420")
         self._window.minsize(760, 320)
         self._center_on_parent(parent)
         self._resize_job: Optional[str] = None
+        self._tooltip = Tooltip(cast(tk.Widget, self._window))
 
         toolbar = ttk.Frame(self._window, padding=(8, 8, 8, 4))
         toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -57,6 +83,13 @@ class RegistryWindow:
 
         self._columns = self._load_columns()
         columns = [col["key"] for col in self._columns]
+        
+        # Heading and row height adjustment
+        style = ttk.Style(self._window)
+        style.configure("Treeview", rowheight=25)
+        # padding and font to ensure headings are visible and taller
+        style.configure("Treeview.Heading", padding=(0, 8), font=('TkDefaultFont', 10, 'bold'))
+        
         tree = ttk.Treeview(body, columns=columns, show="headings", selectmode="extended")
         tree.grid(row=0, column=0, sticky="nsew")
         self._tree = tree
@@ -68,6 +101,8 @@ class RegistryWindow:
         tree.tag_configure("missing", foreground="#cc3333")
         tree.bind("<Double-1>", self._on_double_click)
         tree.bind("<Configure>", self._on_tree_resize)
+        tree.bind("<Motion>", self._on_mouse_move)
+        tree.bind("<Leave>", lambda _: self._tooltip.hide_tip())
 
         status_bar = ttk.Frame(self._window, padding=(8, 4))
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
@@ -76,8 +111,8 @@ class RegistryWindow:
         ttk.Label(status_bar, textvariable=self._status_var, anchor="w").grid(row=0, column=0, sticky="w")
         ttk.Button(status_bar, text="Load", command=self._open_selected).grid(row=0, column=1, sticky="e")
 
-        self._sort_key: Optional[str] = None
-        self._sort_desc = False
+        self._sort_key: Optional[str] = "Study.Date"
+        self._sort_desc = True
         self._configure_columns()
         self.refresh()
         self._update_add_menu_state()
@@ -100,9 +135,13 @@ class RegistryWindow:
             values = [self._resolve_entry_value(entry, col["key"]) for col in self._columns]
             tag = "missing" if not entry.get("path") else ""
             self._tree.insert("", "end", values=values, tags=(tag,))
+        
+        self._apply_sort()
+        self._update_sort_heading()
+        
         self._status_var.set(f"{len(entries)} item(s)")
         self._update_add_menu_state()
-        self._fit_columns()
+        self._window.after(10, self._fit_columns)
 
     def set_status(self, text: str) -> None:
         self._status_var.set(text)
@@ -114,17 +153,41 @@ class RegistryWindow:
             if isinstance(col, dict) and "key" in col:
                 entry = dict(col)
                 entry.setdefault("hidden", False)
+                entry["display_title"] = str(entry.get("title") or entry["key"])
                 normalized.append(entry)
         return [c for c in normalized if not c.get("hidden")]
 
     def _configure_columns(self) -> None:
         for col in self._columns:
             key = col["key"]
-            title = str(col.get("title") or key)
+            title = col.get("display_title") or key
             width = int(col.get("width") or 120)
             anchor = "w" if key in ("basename", "path") else "center"
             self._tree.heading(key, text=title, command=lambda k=key: self._on_sort(k))
-            self._tree.column(key, width=width, anchor=anchor, stretch=True)
+            # Hard minimum of 40px, but auto-fit floor is 100px
+            self._tree.column(key, width=width, minwidth=40, anchor=anchor, stretch=True)
+
+    def _on_mouse_move(self, event: tk.Event) -> None:
+        item = self._tree.identify_row(event.y)
+        column = self._tree.identify_column(event.x)
+        if not item or not column:
+            self._tooltip.hide_tip()
+            return
+        
+        try:
+            col_idx = int(column[1:]) - 1
+            values = self._tree.item(item, "values")
+            if col_idx < len(values):
+                val = str(values[col_idx])
+                if len(val) > 20:
+                    x = self._window.winfo_rootx() + event.x + 15
+                    y = self._window.winfo_rooty() + event.y + 15
+                    self._tooltip.hide_tip()
+                    self._tooltip.show_tip(val, x, y)
+                else:
+                    self._tooltip.hide_tip()
+        except (ValueError, IndexError):
+            self._tooltip.hide_tip()
 
     def _resolve_entry_value(self, entry: dict, key: str) -> Any:
         if key in entry:
@@ -216,7 +279,7 @@ class RegistryWindow:
             self._window.update_idletasks()
         except Exception:
             pass
-        w = int(self._window.winfo_width() or self._window.winfo_reqwidth() or 920)
+        w = int(self._window.winfo_width() or self._window.winfo_reqwidth() or 960)
         h = int(self._window.winfo_height() or self._window.winfo_reqheight() or 420)
         try:
             geo = parent.winfo_geometry()
@@ -256,14 +319,19 @@ class RegistryWindow:
 
     def _autofit_column(self, key: str) -> None:
         font = self._tree_font()
-        header = str(self._tree.heading(key, "text") or key)
-        max_w = font.measure(header) + 16
+        display_title = next((c["display_title"] for c in self._columns if c["key"] == key), key)
+        title_w = font.measure(display_title) + 32
+        
+        # Enforce min width of 100px (~10 chars)
+        min_w = 100
+        max_w = max(title_w, min_w)
+        
         for item in self._tree.get_children():
             values = self._tree.item(item, "values")
             idx = [c["key"] for c in self._columns].index(key)
             if idx < len(values):
-                max_w = max(max_w, font.measure(str(values[idx])) + 16)
-        self._tree.column(key, width=max_w, stretch=True)
+                max_w = max(max_w, font.measure(str(values[idx])) + 24)
+        self._tree.column(key, width=max_w, stretch=(key in ("basename", "path")))
 
     def _fit_columns(self) -> None:
         self._resize_job = None
@@ -273,20 +341,41 @@ class RegistryWindow:
         keys = [c["key"] for c in self._columns]
         widths: dict[str, int] = {}
         total = 0
+        
         for key in keys:
-            header = str(self._tree.heading(key, "text") or key)
-            max_w = font.measure(header) + 16
+            display_title = next((c["display_title"] for c in self._columns if c["key"] == key), key)
+            title_w = font.measure(display_title) + 32
+            
+            # Enforce min width of 100px (~10 chars)
+            min_w = 100
+            
             idx = keys.index(key)
+            max_content_w = 0
             for item in self._tree.get_children():
                 values = self._tree.item(item, "values")
                 if idx < len(values):
-                    max_w = max(max_w, font.measure(str(values[idx])) + 16)
+                    # Measure content width
+                    max_content_w = max(max_content_w, font.measure(str(values[idx])) + 24)
+            
+            # Use the largest of title, 100px floor, or content
+            max_w = max(title_w, min_w, max_content_w)
+            
+            # Clamp content-based width to reasonable default if too large,
+            # but respect title width and floor as absolute minimum.
+            default_w = next((int(c.get("width", 120)) for c in self._columns if c["key"] == key), 120)
+            max_w = min(max_w, max(max_w, default_w * 2))
+            max_w = min(max_w, 600)
+            
+            # FINAL CHECK: Must be at least title_w and floor
+            max_w = max(max_w, title_w, min_w)
+            
             widths[key] = max_w
             total += max_w
 
-        avail = max(int(self._tree.winfo_width()) - 8, 100)
+        avail = max(int(self._tree.winfo_width()) - 20, 100)
         if total < avail:
             extra = avail - total
+            # Distribute extra space to path and basename
             flex_keys = [k for k in keys if k in ("path", "basename")] or keys
             if flex_keys:
                 per = extra // len(flex_keys)
@@ -294,7 +383,7 @@ class RegistryWindow:
                     widths[k] += per
 
         for key in keys:
-            self._tree.column(key, width=widths[key], stretch=True)
+            self._tree.column(key, width=widths[key], stretch=(key in ("basename", "path")))
 
     def _tree_font(self) -> tkfont.Font:
         try:
@@ -341,6 +430,6 @@ class RegistryWindow:
         arrow = "▼" if self._sort_desc else "▲"
         for col in self._columns:
             key = col["key"]
-            title = str(col.get("title") or key)
+            title = col.get("display_title") or col.get("title") or key
             label = f"{title} {arrow}" if key == self._sort_key else title
             self._tree.heading(key, text=label)
