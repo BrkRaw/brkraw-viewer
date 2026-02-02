@@ -81,12 +81,6 @@ jobs:
             exit 0
           fi
 
-          # Check whether version file changed in this push
-          if ! git diff --name-only "${BEFORE}" "${SHA}" | grep -q '^pyproject.toml$'; then
-            echo "pyproject.toml not changed. Skipping."
-            exit 0
-          fi
-
           version=$(python3 - <<'PY'
           import re
           from pathlib import Path
@@ -99,6 +93,12 @@ jobs:
           if [[ -z "${version}" ]]; then
             echo "No version found in pyproject.toml" >&2
             exit 1
+          fi
+          
+          latest_tag=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+          if [[ -n "${latest_tag}" && "${latest_tag#v}" == "${version}" ]]; then
+            echo "Version ${version} already released as ${latest_tag}. Skipping."
+            exit 0
           fi
 
           echo "changed=true" >> "$GITHUB_OUTPUT"
