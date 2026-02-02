@@ -19,3 +19,6 @@ htmlcov/
 site/
 .mkdocs-cache/
 .vscode/settings.json
+dev/
+!docs/dev/
+!docs/dev/**

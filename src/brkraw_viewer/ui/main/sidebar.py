@@ -50,7 +50,7 @@ class Sidebar(ttk.Frame):
         scans_box.rowconfigure(0, weight=1)
         scans_box.rowconfigure(1, weight=0)
 
-        self._scan_listbox = tk.Listbox(scans_box, width=28, height=18, exportselection=False)  # scan list
+        self._scan_listbox = tk.Listbox(scans_box, width=20, height=18, exportselection=False)  # scan list
         self._scan_listbox.grid(row=0, column=0, sticky="nsew")
         self._scan_listbox.bind("<<ListboxSelect>>", self._handle_scan_select)
 
@@ -73,7 +73,7 @@ class Sidebar(ttk.Frame):
         recos_box.rowconfigure(0, weight=1)
         recos_box.rowconfigure(1, weight=0)
 
-        self._reco_listbox = tk.Listbox(recos_box, width=28, height=8, exportselection=False)  # reco list
+        self._reco_listbox = tk.Listbox(recos_box, width=20, height=8, exportselection=False)  # reco list
         self._reco_listbox.grid(row=0, column=0, sticky="nsew")
         self._reco_listbox.bind("<<ListboxSelect>>", self._handle_reco_select)
 

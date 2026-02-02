@@ -17,6 +17,10 @@ Use the Load button to open:
 
 The selected scan and reconstruction control what is shown in the viewport.
 
+For a shared or external registry file, launch with:
+
+`brkraw viewer --registry /path/to/registry.jsonl`
+
 ## Controls
 
 - **Space**: raw, scanner, or subject RAS

@@ -81,5 +81,8 @@ class ViewerTab:
     def set_zoom_value(self, value: float) -> None:
         self.top.set_zoom_value(value)
 
+    def set_controls_enabled(self, enabled: bool) -> None:
+        self.top.set_controls_enabled(enabled)
+
     def set_value_display(self, value_text: str, *, plot_enabled: bool) -> None:
-        self.right.set_value_display(value_text, plot_enabled=plot_enabled)
+        self.top.set_value_display(value_text, plot_enabled=plot_enabled)

@@ -327,8 +327,8 @@ class DatasetController:
             return {"rows": [], "truncated": 0}
 
         query = (query or "").strip()
-        if not query:
-            return {"rows": [], "truncated": 0}
+        # if not query:
+        #    return {"rows": [], "truncated": 0}
 
         scope_norm = (scope or "all").strip().lower()
         if scope_norm == "all":
@@ -354,12 +354,45 @@ class DatasetController:
         rows: list[dict] = []
         total = 0
 
+        def _fmt_val_full(val: object) -> str:
+            # Full representation for detail view
+            if hasattr(val, "tolist"):
+                try:
+                    return str(getattr(val, "tolist")())
+                except Exception:
+                    pass
+            return str(val)
+
+        def _fmt_val_display(val: object) -> str:
+            # Short representation for tree view
+            # Handle numpy arrays (duck typing)
+            if hasattr(val, "shape"):
+                try:
+                    shape = val.shape  # type: ignore
+                    if hasattr(shape, "__iter__"):
+                        shape_str = "x".join(str(d) for d in shape)
+                        return f"Array of {shape_str}"
+                except Exception:
+                    pass
+
+            s = str(val)
+            s = s.replace("\n", " ").replace("\r", "")
+            if len(s) > 30:
+                s = s[:30] + " ..."
+            return s
+
         def _emit(src: str, key_path: str, value: object) -> None:
             nonlocal total
             total += 1
             if len(rows) < limit:
                 rows.append(
-                    {"file": src, "key": key_path, "type": type(value).__name__, "value": value}
+                    {
+                        "file": src,
+                        "key": key_path,
+                        "type": type(value).__name__,
+                        "value": _fmt_val_display(value),
+                        "full_value": _fmt_val_full(value),
+                    }
                 )
 
         def _walk(src: str, prefix: str, obj: object) -> None:

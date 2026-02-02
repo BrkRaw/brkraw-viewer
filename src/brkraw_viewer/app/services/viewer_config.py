@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import logging
@@ -8,6 +9,7 @@ from brkraw.core import config as config_core
 from brkraw.core.config import resolve_root
 
 logger = logging.getLogger("brkraw.viewer")
+REGISTRY_PATH_ENV = "BRKRAW_VIEWER_REGISTRY_PATH"
 
 
 def _default_registry_columns() -> List[Dict[str, Any]]:
@@ -82,7 +84,25 @@ def save_viewer_config(viewer: Dict[str, Any], root: Optional[Path] = None) -> N
     config_core.write_config(config, root=root)
 
 
-def registry_path(root: Optional[Path] = None) -> Path:
+def _normalize_external_registry_path(path_like: str | Path) -> Path:
+    path = Path(path_like).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    try:
+        return path.resolve()
+    except Exception:
+        return path
+
+
+def registry_path(root: Optional[Path] = None, registry_file: Optional[str | Path] = None) -> Path:
+    override = registry_file if registry_file is not None else os.environ.get(REGISTRY_PATH_ENV)
+    if isinstance(override, str):
+        override = override.strip()
+        if not override:
+            override = None
+    if override is not None:
+        return _normalize_external_registry_path(override)
+
     viewer = load_viewer_config(root)
     registry = viewer.get("registry", {})
     rel = registry.get("path", "viewer/registry.jsonl")

@@ -109,6 +109,14 @@ Optional arguments allow opening a specific scan or slice:
         --scan 3 \
         --reco 1
 
+Use an external registry file (instead of `~/.brkraw/config.yaml` registry path):
+
+    brkraw viewer /path/to/bruker/study --registry ./shared-registry.jsonl
+
+Write registry entries directly to an external JSONL file:
+
+    brkraw viewer-registry add /path/to/bruker/study -t ./shared-registry
+
 The viewer can also open `.zip` or Paravision-exported `.PvDatasets`
 archives using `Load` (folder or archive file).
 
