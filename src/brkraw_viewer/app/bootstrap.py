@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import sys
 import tkinter as tk
+import os
 from pathlib import Path
 
 from brkraw.core import config as config_core
+from brkraw_viewer.app.services.viewer_config import REGISTRY_PATH_ENV
 
 _ICON_REF: tk.PhotoImage | None = None
 
@@ -135,6 +137,7 @@ def run_app(
     scan_id: int | None = None,
     reco_id: int | None = None,
     info_spec: str | Path | None = None,
+    registry: str | Path | None = None,
 ) -> None:
     from brkraw_viewer.app.controller import ViewerController
     from brkraw_viewer.ui.main import MainWindow
@@ -153,6 +156,15 @@ def run_app(
         config_core.configure_logging(root=None, stream=sys.stdout)
     except Exception:
         pass
+    if registry:
+        registry_path = Path(registry).expanduser()
+        if not registry_path.is_absolute():
+            registry_path = Path.cwd() / registry_path
+        try:
+            registry_path = registry_path.resolve()
+        except Exception:
+            pass
+        os.environ[REGISTRY_PATH_ENV] = str(registry_path)
     controller = ViewerController()
     MainWindow(root, controller)
 

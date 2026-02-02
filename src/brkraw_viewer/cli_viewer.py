@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-from pathlib import Path
 from typing import List
 
 from brkraw_viewer.app.bootstrap import run_app
@@ -25,6 +24,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[na
         "--info-spec",
         default=None,
         help="Optional scan info spec YAML path (use instead of the default mapping).",
+    )
+    parser.add_argument(
+        "--registry",
+        default=None,
+        help="External registry JSONL path (use instead of viewer.registry.path from config).",
     )
     parser.set_defaults(func=_run_viewer)
 
@@ -63,5 +67,6 @@ def _run_viewer(args: argparse.Namespace) -> int:
         scan_id=scan_id,
         reco_id=reco_id,
         info_spec=args.info_spec,
+        registry=args.registry,
     )
     return 0

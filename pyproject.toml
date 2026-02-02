@@ -45,4 +45,4 @@ brkraw_viewer = ["assets/*.png", "assets/*.ico", "snippets/**/*.yaml"]
 
 [project.entry-points."brkraw.cli"]
 viewer = "brkraw_viewer.cli_viewer:register"
-viewer-config = "brkraw_viewer.cli_viewer_config:register"
+viewer-registry = "brkraw_viewer.cli_viewer_config:register"

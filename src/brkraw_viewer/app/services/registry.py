@@ -53,16 +53,16 @@ def normalize_path(path: Path) -> str:
         return str(path)
 
 
-def _ensure_registry_path(root: Optional[Path] = None) -> Path:
-    reg_path = registry_path(root)
+def _ensure_registry_path(root: Optional[Path] = None, registry_file: Optional[str | Path] = None) -> Path:
+    reg_path = registry_path(root=root, registry_file=registry_file)
     reg_path.parent.mkdir(parents=True, exist_ok=True)
     if not reg_path.exists():
         reg_path.write_text("", encoding="utf-8")
     return reg_path
 
 
-def load_registry(root: Optional[Path] = None) -> List[Dict[str, Any]]:
-    reg_path = registry_path(root)
+def load_registry(root: Optional[Path] = None, registry_file: Optional[str | Path] = None) -> List[Dict[str, Any]]:
+    reg_path = registry_path(root=root, registry_file=registry_file)
     if not reg_path.exists():
         return []
     entries: List[Dict[str, Any]] = []
@@ -80,8 +80,12 @@ def load_registry(root: Optional[Path] = None) -> List[Dict[str, Any]]:
     return entries
 
 
-def write_registry(entries: Iterable[Dict[str, Any]], root: Optional[Path] = None) -> None:
-    reg_path = _ensure_registry_path(root)
+def write_registry(
+    entries: Iterable[Dict[str, Any]],
+    root: Optional[Path] = None,
+    registry_file: Optional[str | Path] = None,
+) -> None:
+    reg_path = _ensure_registry_path(root=root, registry_file=registry_file)
     lines = [json.dumps(_json_safe(entry), ensure_ascii=True) for entry in entries]
     reg_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
@@ -110,23 +114,33 @@ def _discover_dataset_paths(path: Path) -> List[Path]:
             logger.info("Found study dataset: %s", path)
             return direct
         discovered: List[Path] = []
-        for child in sorted(path.iterdir()):
-            if child.name.startswith("."):
+        stack = [path]
+        while stack:
+            current = stack.pop()
+            try:
+                children = sorted(current.iterdir())
+            except Exception:
                 continue
-            if _is_archive(child):
-                logger.debug("Found archive dataset: %s", child)
-                discovered.append(child)
-                continue
-            if child.is_dir():
-                try:
-                    studies = _discover_study_paths(child)
-                except ValueError as exc:
-                    logger.warning("Skipping %s: %s", child, exc)
+            for child in children:
+                if child.name.startswith("."):
                     continue
-                if studies:
-                    for study in studies:
-                        logger.info("Found study dataset: %s", study)
-                discovered.extend(studies)
+                if _is_archive(child):
+                    logger.debug("Found archive dataset: %s", child)
+                    discovered.append(child)
+                    continue
+                if child.is_dir():
+                    try:
+                        studies = _discover_study_paths(child)
+                    except ValueError as exc:
+                        logger.warning("Skipping %s: %s", child, exc)
+                        continue
+                    if studies:
+                        for study in studies:
+                            logger.info("Found study dataset: %s", study)
+                        discovered.extend(studies)
+                        # Don't descend further once a study is detected here.
+                        continue
+                    stack.append(child)
         logger.info("Discovery complete: %d dataset(s) under %s", len(discovered), path)
         return discovered
     return []
@@ -200,8 +214,12 @@ def _merge_entries(
     return existing, added
 
 
-def register_paths(paths: Iterable[Path], root: Optional[Path] = None) -> Tuple[int, int]:
-    existing = {entry.get("path", ""): entry for entry in load_registry(root)}
+def register_paths(
+    paths: Iterable[Path],
+    root: Optional[Path] = None,
+    registry_file: Optional[str | Path] = None,
+) -> Tuple[int, int]:
+    existing = {entry.get("path", ""): entry for entry in load_registry(root=root, registry_file=registry_file)}
     new_entries: List[RegistryEntry] = []
     skipped = 0
     for path in paths:
@@ -211,24 +229,28 @@ def register_paths(paths: Iterable[Path], root: Optional[Path] = None) -> Tuple[
             logger.warning("Failed to register %s: %s", path, exc)
             skipped += 1
     merged, added = _merge_entries(existing, new_entries)
-    write_registry(merged.values(), root)
+    write_registry(merged.values(), root=root, registry_file=registry_file)
     return added, skipped
 
 
-def unregister_paths(paths: Iterable[Path], root: Optional[Path] = None) -> int:
-    entries = {entry.get("path", ""): entry for entry in load_registry(root)}
+def unregister_paths(
+    paths: Iterable[Path],
+    root: Optional[Path] = None,
+    registry_file: Optional[str | Path] = None,
+) -> int:
+    entries = {entry.get("path", ""): entry for entry in load_registry(root=root, registry_file=registry_file)}
     removed = 0
     for path in paths:
         norm = normalize_path(path)
         if norm in entries:
             entries.pop(norm, None)
             removed += 1
-    write_registry(entries.values(), root)
+    write_registry(entries.values(), root=root, registry_file=registry_file)
     return removed
 
 
-def registry_status(root: Optional[Path] = None) -> Dict[str, Any]:
-    entries = load_registry(root)
+def registry_status(root: Optional[Path] = None, registry_file: Optional[str | Path] = None) -> Dict[str, Any]:
+    entries = load_registry(root=root, registry_file=registry_file)
     return {
         "count": len(entries),
         "entries": entries,
@@ -245,7 +267,11 @@ def resolve_entry_value(entry: Mapping[str, Any], key: str) -> Optional[Any]:
     return None
 
 
-def scan_registry(paths: Iterable[Path], root: Optional[Path] = None) -> Tuple[int, int]:
+def scan_registry(
+    paths: Iterable[Path],
+    root: Optional[Path] = None,
+    registry_file: Optional[str | Path] = None,
+) -> Tuple[int, int]:
     discovered: List[Path] = []
     skipped = 0
     for path in paths:
@@ -254,5 +280,5 @@ def scan_registry(paths: Iterable[Path], root: Optional[Path] = None) -> Tuple[i
         except Exception as exc:
             logger.warning("Failed to scan %s: %s", path, exc)
             skipped += 1
-    added, _ = register_paths(discovered, root=root)
+    added, _ = register_paths(discovered, root=root, registry_file=registry_file)
     return added, skipped
